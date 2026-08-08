@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BakeryOps Manager Workspace</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">BD</span>
+      <div><b>Baker’s Door</b><small>BakeryOps Assistant</small></div>
+    </div>
+    <nav aria-label="Manager workspace">
+      <button class="nav-button active" data-view="overview"><span>Overview</span><small>Priority queue</small></button>
+      <button class="nav-button" data-view="waste"><span>Waste review</span><small>Supplier cost</small></button>
+      <button class="nav-button" data-view="production"><span>Production plan</span><small>Next Tuesday</small></button>
+      <button class="nav-button" data-view="restock"><span>Freezer & restock</span><small>Count + draft</small></button>
+    </nav>
+    <div class="sidebar-note">
+      <b>Exploratory workspace</b>
+      <span>All values are sample data. Approvals stay inside this prototype.</span>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Manager workspace · sample data</p>
+        <h1 id="page-title">Operations overview</h1>
+        <p id="page-subtitle">Handle the most urgent exception, then move to what is next.</p>
+      </div>
+      <div class="freshness"><span class="live-dot"></span><div><small>Data freshness</small><b>Sample · refreshed today</b></div></div>
+    </header>
+
+    <section class="sample-banner" role="note">
+      <b>Prototype boundary:</b> POS item-level sales capability is confirmed. Costs, mappings, counts, forecasts, zone limits, and events below are sample data. No supplier order or production record is sent.
+    </section>
+
+    <section id="overview-view" class="view active" data-view-content="overview">
+      <div class="section-intro">
+        <div><p class="section-kicker">Priority queue</p><h2>What needs your attention?</h2></div>
+        <p>Urgency reflects timing and operational impact—not whichever number is largest.</p>
+      </div>
+      <div id="action-queue" class="action-queue"></div>
+    </section>
+
+    <section id="waste-view" class="view" data-view-content="waste">
+      <div class="section-intro">
+        <div><p class="section-kicker">Plan next</p><h2>Waste review</h2></div>
+        <button class="secondary" data-go-view="production">Review production plan</button>
+      </div>
+      <div class="metric-grid metric-grid-three">
+        <article class="metric-card featured"><span>Supplier waste cost</span><strong id="waste-total">—</strong><small id="waste-compare">Sample comparable Tuesdays</small></article>
+        <article class="metric-card"><span>Affected pastries</span><strong id="waste-product-count">—</strong><small>Ranked by supplier cost</small></article>
+        <article class="metric-card"><span>Availability guardrail</span><strong id="waste-availability">—</strong><small>Sellouts on comparable Tuesdays</small></article>
+      </div>
+      <div class="two-column wide-left">
+        <article class="panel">
+          <div class="panel-heading"><div><h3>Affected products</h3><p>Select a pastry to inspect comparable Tuesdays and the proposed change.</p></div><span class="source-chip">Sample item-level data</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Pastry</th><th>Leftovers</th><th>Supplier waste cost</th><th>Next Tuesday</th><th>Guardrail</th></tr></thead><tbody id="waste-table-body"></tbody></table></div>
+        </article>
+        <article class="panel evidence-card">
+          <div class="panel-heading"><div><h3 id="waste-evidence-title">Evidence considered</h3><p>Comparable Tuesdays show patterns, not proven causes.</p></div></div>
+          <div id="waste-trend" class="chart"></div>
+          <div id="waste-evidence" class="evidence-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="production-view" class="view" data-view-content="production">
+      <div class="section-intro">
+        <div><p class="section-kicker">Plan next</p><h2>Next Tuesday production plan</h2></div>
+        <span id="production-status" class="status-chip draft">Internal draft</span>
+      </div>
+      <div class="metric-grid metric-grid-three">
+        <article class="metric-card"><span>Products changed</span><strong id="production-change-count">—</strong><small>Compared with current sheet</small></article>
+        <article class="metric-card"><span>Availability reviews</span><strong id="production-review-count">—</strong><small>Sellout guardrails needing judgment</small></article>
+        <article class="metric-card"><span>Plan effect</span><strong id="production-unit-change">—</strong><small>Manager-edited sample units</small></article>
+      </div>
+      <article class="panel">
+        <div class="panel-heading"><div><h3>Entire production sheet</h3><p>Edit one pastry or review the whole sheet. Recommendations never replace manager judgment.</p></div><span class="source-chip">Sample plan</span></div>
+        <div class="table-scroll"><table><thead><tr><th>Pastry</th><th>Current sheet</th><th>Suggested</th><th>Manager quantity</th><th>Availability guardrail</th><th>Evidence considered</th></tr></thead><tbody id="production-table-body"></tbody></table></div>
+        <footer class="panel-footer"><p><b>Internal only.</b> Approval does not change a baker sheet or production record.</p><button id="approve-production" class="primary">Approve internal production plan</button></footer>
+      </article>
+    </section>
+
+    <section id="restock-view" class="view" data-view-content="restock">
+      <div class="section-intro">
+        <div><p class="section-kicker">Review today</p><h2>Freezer count & supplier restock</h2></div>
+        <span id="restock-status" class="status-chip waiting">Waiting for freezer count</span>
+      </div>
+      <div class="workflow-steps" aria-label="Restock workflow">
+        <span class="active">1. Confirm count</span><i></i><span>2. Review risks</span><i></i><span>3. Approve internal draft</span>
+      </div>
+      <article class="panel count-panel">
+        <div class="panel-heading"><div><h3>Physical freezer count</h3><p>The manager confirms full and partial boxes before recommendations become current.</p></div><span id="count-freshness" class="source-chip warning">Not confirmed</span></div>
+        <div class="table-scroll"><table><thead><tr><th>Frozen product</th><th>Assigned zone</th><th>Full boxes</th><th>Partial pieces</th><th>Pieces/box</th></tr></thead><tbody id="count-table-body"></tbody></table></div>
+        <footer class="panel-footer"><p>Editing a confirmed count returns recommendations to <b>waiting</b>.</p><button id="confirm-count" class="primary">Confirm physical count</button></footer>
+      </article>
+
+      <div class="metric-grid metric-grid-three restock-metrics">
+        <article class="metric-card featured"><span>Products at shortage risk</span><strong id="shortage-count">Waiting</strong><small id="shortage-context">Confirm the freezer count</small></article>
+        <article class="metric-card"><span>Draft supplier order</span><strong id="restock-box-count">—</strong><small id="restock-cost">Internal sample draft</small></article>
+        <article class="metric-card"><span>Zone capacity guardrail</span><strong id="zone-review-count">—</strong><small>After proposed incoming boxes</small></article>
+      </div>
+
+      <div class="two-column wide-left">
+        <article class="panel">
+          <div class="panel-heading"><div><h3>Supplier-restock worksheet</h3><p>Expected usage combines the approved production plan, comparable sales, and manager review.</p></div><span class="source-chip">Sample rules</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Product</th><th>Counted pieces</th><th>Expected use</th><th>Risk</th><th>Suggested</th><th>Manager boxes</th><th>Why</th></tr></thead><tbody id="restock-table-body"></tbody></table></div>
+          <footer class="panel-footer"><p><b>Internal only.</b> Finalizing prepares a worksheet and never contacts a supplier.</p><button id="approve-restock" class="primary" disabled>Approve internal restock draft</button></footer>
+        </article>
+        <article class="panel zones-panel">
+          <div class="panel-heading"><div><h3>Assigned freezer zones</h3><p>Practical and hard limits are sample setup values.</p></div><button id="edit-zones" class="text-button">Edit limits</button></div>
+          <div id="zone-list" class="zone-list"></div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog">
+    <form method="dialog">
+      <div class="dialog-heading"><div><p class="section-kicker">Internal approval</p><h2 id="dialog-title">Confirm draft</h2></div><button value="cancel" aria-label="Close">×</button></div>
+      <p id="dialog-copy"></p>
+      <div id="dialog-summary" class="dialog-summary"></div>
+      <label>Manager initials<input id="manager-initials" maxlength="4" value="MW"></label>
+      <div class="dialog-actions"><button value="cancel" class="secondary">Continue editing</button><button id="confirm-dialog-action" value="default" class="primary">Confirm internal draft</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
