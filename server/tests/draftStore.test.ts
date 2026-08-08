@@ -16,6 +16,7 @@ test("I1: a fresh app has one active draft, and saved data survives a simulated 
   const draft = store.getActiveDraft();
   assert.equal(draft.status, "draft");
   assert.deepEqual(draft.data, {});
+  assert.equal(draft.updatedAt, null);
 
   store.saveActiveDraft({ countFullBoxes: 5, countPartialPieces: 1 });
 
@@ -24,6 +25,7 @@ test("I1: a fresh app has one active draft, and saved data survives a simulated 
   const reloaded = store.getActiveDraft();
   assert.equal(reloaded.id, draft.id);
   assert.deepEqual(reloaded.data, { countFullBoxes: 5, countPartialPieces: 1 });
+  assert.equal(typeof reloaded.updatedAt, "string");
 });
 
 test("I2: an unfinalized draft never appears in History", () => {

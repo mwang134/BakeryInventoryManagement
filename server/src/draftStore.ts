@@ -14,6 +14,7 @@ export interface DraftRecord {
   managerInitials: string | null;
   finalizedAt: string | null;
   supplierOrderSent: boolean;
+  updatedAt: string | null;
 }
 
 export interface DraftStore {
@@ -33,6 +34,7 @@ function toRecord(row: {
   data: string;
   manager_initials: string | null;
   finalized_at: string | null;
+  updated_at: string | null;
 }): DraftRecord {
   return {
     id: row.id,
@@ -44,6 +46,7 @@ function toRecord(row: {
     // this is a fixed rule of the domain, not something the database can
     // ever be asked to override, so it is not even a column.
     supplierOrderSent: false,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -56,7 +59,8 @@ export function createDraftStore(location: string): DraftStore {
       status TEXT NOT NULL CHECK (status IN ('draft', 'final')),
       data TEXT NOT NULL,
       manager_initials TEXT,
-      finalized_at TEXT
+      finalized_at TEXT,
+      updated_at TEXT
     )
   `);
 
@@ -87,8 +91,9 @@ export function createDraftStore(location: string): DraftStore {
       throw new Error(`Draft ${id} is finalized and is immutable`);
     }
 
-    db.prepare("UPDATE drafts SET data = ? WHERE id = ?").run(
+    db.prepare("UPDATE drafts SET data = ?, updated_at = ? WHERE id = ?").run(
       JSON.stringify(data),
+      new Date().toISOString(),
       id,
     );
     return toRecord(db.prepare("SELECT * FROM drafts WHERE id = ?").get(id) as any);
