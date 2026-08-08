@@ -77,3 +77,66 @@ export function calculateProjectedEndStock({
 }) {
   return projectedStockAtArrival + managerBoxes * piecesPerBox - postArrivalUsagePieces;
 }
+
+// D1/D2/C4: aggregate one date's worth of demand for a single dough SKU
+// across every pastry mapped to it. A missing mapping is never guessed as
+// 1:1, and a missing production-sheet quantity never falls back to zero -
+// both make the whole day's number unusable rather than quietly wrong.
+export function calculateAggregatedDoughDemand({ pastries }) {
+  const missingMappingPastries = pastries
+    .filter((row) => row.doughPiecesPerPastry === undefined || row.doughPiecesPerPastry === null)
+    .map((row) => row.pastryKey);
+
+  if (missingMappingPastries.length > 0) {
+    return {
+      status: "Mapping needed",
+      totalDoughPieces: null,
+      missingMappingPastries,
+      missingQuantityPastries: [],
+    };
+  }
+
+  const missingQuantityPastries = pastries
+    .filter((row) => row.plannedQuantity === undefined || row.plannedQuantity === null)
+    .map((row) => row.pastryKey);
+
+  if (missingQuantityPastries.length > 0) {
+    return {
+      status: "Information incomplete",
+      totalDoughPieces: null,
+      missingMappingPastries: [],
+      missingQuantityPastries,
+    };
+  }
+
+  const totalDoughPieces = pastries.reduce(
+    (total, row) => total + row.plannedQuantity * row.doughPiecesPerPastry,
+    0,
+  );
+
+  return {
+    status: "ok",
+    totalDoughPieces,
+    missingMappingPastries: [],
+    missingQuantityPastries: [],
+  };
+}
+
+// C1/C3: sum several dates' worth of already-aggregated demand (e.g. every
+// date in the pre-arrival or post-arrival window). If any single date is
+// incomplete, the whole range is incomplete - a bad day must not be
+// silently dropped from the total.
+export function sumDoughDemandAcrossDates({ dailyResults }) {
+  const firstIncomplete = dailyResults.find((day) => day.status !== "ok");
+  if (firstIncomplete) {
+    return {
+      status: firstIncomplete.status,
+      totalDoughPieces: null,
+    };
+  }
+
+  return {
+    status: "ok",
+    totalDoughPieces: dailyResults.reduce((total, day) => total + day.totalDoughPieces, 0),
+  };
+}
