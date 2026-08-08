@@ -1,10 +1,20 @@
 import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createDraftStore } from "./draftStore.ts";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createApp(dbLocation: string) {
   const store = createDraftStore(dbLocation);
   const app = express();
   app.use(express.json());
+  app.use(express.static(path.join(__dirname, "..", "public")));
+  // The calculation engine's single source of truth lives in
+  // project/app/src/next-order-list.js (with its own tested suite). Serving
+  // it here means the UI imports the exact same module rather than a copy
+  // that could drift out of sync.
+  app.use("/lib", express.static(path.join(__dirname, "..", "..", "app", "src")));
 
   app.get("/draft", (_req, res) => {
     res.json(store.getActiveDraft());

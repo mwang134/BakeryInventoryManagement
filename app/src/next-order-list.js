@@ -141,6 +141,39 @@ export function sumDoughDemandAcrossDates({ dailyResults }) {
   };
 }
 
+// C1/C2: date-window helpers. Pre-arrival is strictly after the count date
+// through the day before shipment; post-arrival is the shipment date
+// through plan-stock-through, inclusive of both ends.
+export function enumerateDatesBetweenExclusive(startExclusiveIso, endExclusiveIso) {
+  const dates = [];
+  const cursor = new Date(`${startExclusiveIso}T00:00:00Z`);
+  cursor.setUTCDate(cursor.getUTCDate() + 1);
+  const end = new Date(`${endExclusiveIso}T00:00:00Z`);
+  while (cursor < end) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+export function enumerateDatesInclusive(startInclusiveIso, endInclusiveIso) {
+  const dates = [];
+  const cursor = new Date(`${startInclusiveIso}T00:00:00Z`);
+  const end = new Date(`${endInclusiveIso}T00:00:00Z`);
+  while (cursor <= end) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+// Croissant-dough contract: Fri/Sat/Sun are the higher-demand days; Mon-Thu
+// share one baseline (data/redacted-sku-contracts/croissant-dough.md).
+export function classifyDayType(dateIso) {
+  const dayOfWeek = new Date(`${dateIso}T00:00:00Z`).getUTCDay(); // Sun=0 ... Sat=6
+  return dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6 ? "fri-sun" : "mon-thu";
+}
+
 function mostRecentMonday(referenceDateIso) {
   const date = new Date(`${referenceDateIso}T00:00:00Z`);
   // getUTCDay(): Sunday = 0, Monday = 1, ... Saturday = 6.
