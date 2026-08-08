@@ -140,3 +140,54 @@ export function sumDoughDemandAcrossDates({ dailyResults }) {
     totalDoughPieces: dailyResults.reduce((total, day) => total + day.totalDoughPieces, 0),
   };
 }
+
+function mostRecentMonday(referenceDateIso) {
+  const date = new Date(`${referenceDateIso}T00:00:00Z`);
+  // getUTCDay(): Sunday = 0, Monday = 1, ... Saturday = 6.
+  const dayOfWeek = date.getUTCDay();
+  const daysSinceMonday = (dayOfWeek + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - daysSinceMonday);
+  return date.toISOString().slice(0, 10);
+}
+
+// B3/B3a: staleness is tracked on one shared weekly schedule (every count
+// happens as one whole-freezer session), plus an off-cycle trigger for any
+// single pastry whose stock has dropped to 1 box or fewer since it was last
+// counted. Both reasons can apply at once and are reported independently.
+export function calculateCountFreshness({ countDate, referenceDate, onHandPieces, piecesPerBox }) {
+  const reasons = [];
+
+  if (countDate < mostRecentMonday(referenceDate)) {
+    reasons.push("Weekly recount overdue - the last whole-freezer count was before the most recent Monday.");
+  }
+
+  if (onHandPieces <= piecesPerBox) {
+    reasons.push("Low stock (1 box or fewer) - an off-cycle recount is required for this pastry.");
+  }
+
+  return {
+    needsRecount: reasons.length > 0,
+    reasons,
+  };
+}
+
+// H2/H2a: labels projected freezer-zone capacity, and makes explicit that
+// exceeding the hard maximum is a warning, not a finalization blocker - that
+// is a deliberate V1 decision, not an oversight.
+export function calculateCapacityStatus({ currentUnits, incomingUnits, practicalCapacity, hardCapacity }) {
+  const projectedUnits = currentUnits + incomingUnits;
+  const status =
+    projectedUnits > hardCapacity ? "blocked" : projectedUnits > practicalCapacity ? "limited" : "comfortable";
+
+  return {
+    projectedUnits,
+    status,
+    blocksFinalization: false,
+    warning:
+      status === "blocked"
+        ? `Projected ${projectedUnits} units exceeds the hard capacity of ${hardCapacity}. Finalization is still allowed, but review before committing to this quantity.`
+        : status === "limited"
+          ? `Projected ${projectedUnits} units is within legroom above the practical capacity of ${practicalCapacity}.`
+          : "Projected stock is within practical capacity.",
+  };
+}
