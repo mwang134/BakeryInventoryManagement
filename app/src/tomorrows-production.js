@@ -58,3 +58,39 @@ export function calculateProductionSuggestion({
         : `Average of ${validDays.length} comparable days is ${suggestedQuantity}, ${difference > 0 ? "above" : "below"} the current ${currentQuantity}.`,
   };
 }
+
+// A product needs an explicit manager decision if it carries any of the
+// four review flags - a plain "no change, nothing unusual" product does not.
+export function needsReview(suggestion) {
+  return suggestion.status === "Limited evidence" || suggestion.changeLabel !== null || suggestion.hasUnusualContext;
+}
+
+// Every flagged product requires one explicit action - Use suggestion, Keep
+// current, or Set custom quantity. There is no default/implicit choice.
+export function resolveManagerDecision({ suggestion, currentQuantity, action, customQuantity }) {
+  if (action === "use-suggestion") {
+    if (suggestion.suggestedQuantity === null) {
+      throw new Error("Cannot use a suggestion that does not exist (Limited evidence).");
+    }
+    return { action, finalQuantity: suggestion.suggestedQuantity };
+  }
+  if (action === "keep-current") {
+    return { action, finalQuantity: currentQuantity };
+  }
+  if (action === "custom") {
+    return { action, finalQuantity: customQuantity };
+  }
+  throw new Error(`Unknown manager decision action: ${action}`);
+}
+
+// The whole plan finalizes at once, not product by product. Merely opening
+// a row/chart does not count as review - only a recorded reviewAction does.
+export function canFinalizeProductionPlan({ products }) {
+  const unreviewed = products.filter((product) => needsReview(product.suggestion) && !product.reviewAction);
+
+  return {
+    canFinalize: unreviewed.length === 0,
+    unreviewedCount: unreviewed.length,
+    unreviewedProductIds: unreviewed.map((product) => product.id),
+  };
+}
