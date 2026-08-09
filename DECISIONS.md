@@ -204,3 +204,22 @@ Reason:
 - Protects the idea-exploration lane from being silently folded into committed delivery scope, per the existing 2026-07-24 decision on protecting Matthew's exploration lane.
 
 Status: active; Branch H remains in `expanding` state, not promoted.
+
+## 2026-08-09 — Enter BUILD convergence for Tomorrow's Production; freeze the calculation rule
+
+Decision:
+- Matthew provided real production-sheet baselines (Monday–Thursday and Friday–Sunday quantities) and freezer counts for many additional pastries and breads beyond croissant dough, via a self-reported blueprint (`data/tous-les-jours-menu-blueprint.csv`). A second genuine shared-dough SKU was confirmed: **donut dough** — one shared dough pool fried as a batch, then split into flavors (Vanilla, Chocolate, Mango, Ube, Pistachio Cream Donut) afterward, analogous to croissant dough. All other shared-looking labels (e.g., "Ready-to-bake," "Frozen package") were confirmed to be prep-category descriptions only — each of those pastries keeps its own separate box/count, not a shared one.
+- "Depends" production quantities are not a data gap; several items genuinely run on an irregular (roughly every-other-day) schedule with no fixed quantity. These are treated as `Information incomplete` (no confident baseline), same UI treatment as a true missing value, for an honest reason rather than an assumed one.
+- Extra-batch carryover is a real operational rule (unbaked extra batch becomes a head start on the next day's prep) that Matthew has not yet decided how to formalize into next-day quantity math. For V1, extra-batch carryover is tracked and shown as visible context only; it does not silently adjust any suggested quantity until Matthew freezes that rule.
+- Real comparable-day sold/leftover/sellout data does not exist yet (leftover counts were confirmed as not currently tracked at all, same root gap as Waste Pattern Review). A clearly labeled, deterministically hand-built **SIMULATED** dataset (`data/tomorrows-production-SIMULATED-comparable-day-sales.csv` and its companion `.md`) stands in for real data so the KPI's mechanics can be built and tested. This dataset must never be used to freeze real acceptance-scenario outputs.
+- Tomorrow's Production calculation rule, frozen for V1:
+  - Suggested quantity = average sold across comparable days on record, rounded to a whole number.
+  - `Quantity change`: suggested differs at all from the current production-sheet quantity.
+  - `Large Quantity Change`: suggested differs from current by more than 25%.
+  - `Unusual context`: any comparable day in the lookback window had a sellout or a recorded unusual event.
+  - `Limited evidence`: fewer than 3 comparable days on record, or any required day's data is missing - shown instead of a confident suggestion, not alongside one.
+
+Reason:
+- Mirrors the same convergence discipline already applied to Next Order List: real data where available, clearly labeled placeholders where not, and no invented thresholds presented as settled without an explicit decision.
+
+Status: active convergence contract for Tomorrow's Production. Not yet fully BUILD-ready: the ready-to-bake opening-batch/reserve split behavior, the extra-batch formalization, and real (non-simulated) comparable-day data all remain open.
