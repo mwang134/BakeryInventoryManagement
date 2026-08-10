@@ -241,3 +241,21 @@ Reason:
 - Keeps the manager-facing check small and low-friction: short list, only items that need it, quick-tap entry, one confirmation feeding two features rather than two separate entry points.
 
 Status: active. Implementation next.
+
+## 2026-08-10 — Enter BUILD convergence for Waste Pattern Review; freeze the calculation rule
+
+Decision:
+- Reuses the same product/comparable-day data already built for Tomorrow's Production (`server/public/productionData.js`), since that SIMULATED dataset already carries sold, sellout, and unusual-context fields per comparable day, and leftover is derivable as production baseline minus sold. No new data-gathering pass was needed to start.
+- Waste Pattern Review calculation rule, frozen for V1:
+  - For each product, compute leftover rate (leftover ÷ produced) for every comparable day on record.
+  - Compare the **most recent** comparable day's leftover rate against the **average of the prior comparable days'** rates (the baseline).
+  - `Unusually high`: the most recent rate exceeds the baseline by more than 50%.
+  - `Building comparable-day baseline`: fewer than 3 valid comparable days on record (or any required day's data missing) - shown instead of a confident flag, never an invented anomaly.
+  - Manager outcome for a flagged product: `Known one-time event` if the flagged day has a recorded sellout/unusual-context note, `Possible repeated baseline problem` if it does not, `Information incomplete` when evidence is limited.
+- Supplier cost in affected leftovers remains supporting context only and shows `Not available`, since no real per-unit cost data has been provided for any product (same treatment as Next Order List's box cost).
+- Waste Pattern Review remains a diagnostic/read view - it does not have its own finalize action or editable quantities; any resulting production change happens in Tomorrow's Production, per the original design decision.
+
+Reason:
+- Mirrors the same convergence discipline as Next Order List and Tomorrow's Production: reuse real/simulated data where it already exists, freeze one clear threshold before writing code, and keep unknowns (supplier cost) visibly unresolved rather than invented.
+
+Status: active convergence contract for Waste Pattern Review. Implementation next.
