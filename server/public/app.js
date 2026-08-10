@@ -390,6 +390,21 @@ function renderSidenav() {
 // Tomorrow's Production is a routine daily task (Review today); Waste
 // Pattern Review is a periodic diagnostic (Plan next) - matching how each
 // KPI was originally scoped, not an arbitrary assignment.
+// "What changed" trend: compares a live value against the most recent
+// finalized record for the same feature, recomputing the historical
+// snapshot's numbers from its raw saved inputs (same pure functions used
+// everywhere else) rather than trusting a stored derived number. Returns
+// null (render nothing) when there's a real current value to compare but
+// no prior finalized record yet - callers decide the "first time" copy.
+function describeTrend({ currentValue, previousValue, formatUnit }) {
+  if (previousValue === null || previousValue === undefined) return null;
+  if (currentValue === null || currentValue === undefined) return null;
+  const delta = currentValue - previousValue;
+  if (delta === 0) return `Same as last finalized (${formatUnit(previousValue)})`;
+  const direction = delta > 0 ? "↑" : "↓";
+  return `${direction} ${formatUnit(Math.abs(delta))} ${delta > 0 ? "more" : "fewer"} than last time (${formatUnit(previousValue)})`;
+}
+
 function buildHomeActions() {
   const row = state.draft ? computeRow(state.draft.data) : { status: "count-needed" };
   const reviewedCount = row.status === "ready" ? 1 : 0;
@@ -404,6 +419,13 @@ function buildHomeActions() {
   const nextOrderUrgent =
     row.status !== "ready" || row.freshness?.needsRecount || row.preArrival?.status === "Short before delivery";
 
+  const lastFinalizedOrder = state.history[0];
+  const previousBoxes = lastFinalizedOrder ? computeRow(lastFinalizedOrder.data).managerBoxes : undefined;
+  const currentBoxes = row.status === "ready" ? row.managerBoxes : null;
+  const boxesTrend = lastFinalizedOrder
+    ? describeTrend({ currentValue: currentBoxes, previousValue: previousBoxes, formatUnit: (n) => `${n} box${n === 1 ? "" : "es"}` })
+    : "First finalized worksheet — no comparison yet";
+
   const productionRows = state.productionDraft ? computeProductionRows(state.productionDraft.data) : [];
   const productionFlaggedCount = productionRows.filter((r) => r.flagged).length;
   const productionReviewedCount = productionRows.filter((r) => r.flagged && r.reviewAction).length;
@@ -413,6 +435,22 @@ function buildHomeActions() {
     : productionFlaggedCount === 0
       ? "No products need review right now"
       : `${productionFlaggedCount} product${productionFlaggedCount === 1 ? "" : "s"} need review`;
+
+  function totalPlannedPieces(rows) {
+    return rows.reduce((sum, r) => sum + (r.finalQuantity ?? r.item.currentQuantity), 0);
+  }
+  const lastFinalizedProduction = state.productionHistory[0];
+  const previousProductionTotal = lastFinalizedProduction
+    ? totalPlannedPieces(computeProductionRows(lastFinalizedProduction.data))
+    : undefined;
+  const currentProductionTotal = state.productionDraft ? totalPlannedPieces(productionRows) : null;
+  const productionTrend = lastFinalizedProduction
+    ? describeTrend({
+        currentValue: currentProductionTotal,
+        previousValue: previousProductionTotal,
+        formatUnit: (n) => `${n} piece${n === 1 ? "" : "s"}`,
+      })
+    : "First finalized plan — no comparison yet";
 
   const wasteRows = computeWasteRows();
   const wasteFlaggedCount = wasteRows.filter((r) => r.waste.isUnusuallyHigh).length;
@@ -431,6 +469,7 @@ function buildHomeActions() {
       detail: `${statusLabel} · Croissant dough`,
       progressPercent: (reviewedCount / totalCount) * 100,
       meta: `${reviewedCount} of ${totalCount} products reviewed${lastEdited ? ` · Last edited ${lastEdited}` : ""}`,
+      trend: boxesTrend,
     },
     {
       id: "tomorrows-production",
@@ -441,6 +480,7 @@ function buildHomeActions() {
       detail: productionDetail,
       progressPercent: productionFlaggedCount ? (productionReviewedCount / productionFlaggedCount) * 100 : 100,
       meta: `${productionReviewedCount} of ${productionFlaggedCount} flagged products reviewed${productionLastEdited ? ` · Last edited ${productionLastEdited}` : ""}`,
+      trend: productionTrend,
     },
     {
       id: "waste-review",
@@ -451,6 +491,7 @@ function buildHomeActions() {
       detail: wasteDetail,
       progressPercent: null,
       meta: "Comparable-day leftover evidence · SIMULATED data",
+      trend: null,
     },
   ];
 }
@@ -463,6 +504,7 @@ function renderActionCard(action) {
       <div class="kpi-detail">${action.detail}</div>
       ${action.progressPercent !== null ? `<div class="progress-track"><div class="progress-fill" style="width:${action.progressPercent}%"></div></div>` : ""}
       <div class="kpi-meta">${action.meta}</div>
+      ${action.trend ? `<div class="kpi-trend">${action.trend}</div>` : ""}
     </button>
   `;
 }
@@ -1301,8 +1343,10 @@ function bindEvents() {
 }
 
 async function init() {
-  await loadActiveDraft();
-  await loadActiveProductionDraft();
+  // History is loaded up front too (not just when the History tab is
+  // opened) so the homepage "what changed" trend has something to compare
+  // against as soon as the app loads.
+  await Promise.all([loadActiveDraft(), loadActiveProductionDraft(), loadHistory(), loadProductionHistory()]);
   render();
   bindEvents();
 }
