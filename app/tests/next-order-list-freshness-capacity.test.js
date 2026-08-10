@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   calculateCountFreshness,
   calculateCapacityStatus,
+  estimateCapacityFromCurrentCount,
 } from "../src/next-order-list.js";
 
 test("B3: a count from before the most recent Monday is stale and needs a recount", () => {
@@ -91,4 +92,30 @@ test("H2a: exceeding hard capacity warns but never blocks finalization", () => {
   assert.equal(result.status, "blocked");
   assert.equal(result.blocksFinalization, false);
   assert.match(result.warning, /hard/i);
+});
+
+// One-time capacity estimate derived from an observed physical count, since
+// no real freezer-zone dimensions have been provided. A partial piece rounds
+// the box count up (it still occupies a full box's worth of space); the hard
+// maximum is one box beyond that. This is a placeholder, not a measured
+// capacity, and must not be recalculated as orders/incoming boxes change.
+test("croissant-dough sample count (5 boxes + 1 partial piece) estimates practical 6, hard 7", () => {
+  const result = estimateCapacityFromCurrentCount({ fullBoxes: 5, partialPieces: 1 });
+
+  assert.equal(result.practicalCapacityBoxes, 6);
+  assert.equal(result.hardCapacityBoxes, 7);
+});
+
+test("no partial piece means no rounding is needed", () => {
+  const result = estimateCapacityFromCurrentCount({ fullBoxes: 4, partialPieces: 0 });
+
+  assert.equal(result.practicalCapacityBoxes, 4);
+  assert.equal(result.hardCapacityBoxes, 5);
+});
+
+test("zero count still produces a valid (if minimal) estimate", () => {
+  const result = estimateCapacityFromCurrentCount({ fullBoxes: 0, partialPieces: 0 });
+
+  assert.equal(result.practicalCapacityBoxes, 0);
+  assert.equal(result.hardCapacityBoxes, 1);
 });

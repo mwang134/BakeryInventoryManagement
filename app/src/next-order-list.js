@@ -224,3 +224,18 @@ export function calculateCapacityStatus({ currentUnits, incomingUnits, practical
           : "Projected stock is within practical capacity.",
   };
 }
+
+// No real freezer-zone capacity has ever been provided, so this derives a
+// placeholder estimate from one observed physical count instead of showing
+// nothing. A partial piece still occupies a full box's worth of space, so it
+// rounds the box count up; the hard maximum is one box beyond that. This is
+// a one-time snapshot of an observed count, not a formula to be re-run as
+// orders/incoming boxes change - callers must not feed a growing total back
+// into it, or "capacity" would just chase whatever is currently on order.
+export function estimateCapacityFromCurrentCount({ fullBoxes, partialPieces }) {
+  const practicalCapacityBoxes = partialPieces > 0 ? fullBoxes + 1 : fullBoxes;
+  return {
+    practicalCapacityBoxes,
+    hardCapacityBoxes: practicalCapacityBoxes + 1,
+  };
+}

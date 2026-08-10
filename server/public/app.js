@@ -8,6 +8,8 @@ import {
   enumerateDatesBetweenExclusive,
   enumerateDatesInclusive,
   classifyDayType,
+  calculateCapacityStatus,
+  estimateCapacityFromCurrentCount,
 } from "/lib/next-order-list.js";
 import {
   calculateProductionSuggestion,
@@ -139,6 +141,21 @@ function computeRow(data) {
   const blockers = [];
   if (freshness.needsRecount) blockers.push(...freshness.reasons);
 
+  // Placeholder capacity estimate (see estimateCapacityFromCurrentCount) -
+  // a one-time snapshot from today's observed count, not a real measured
+  // freezer-zone size. Deliberately not recalculated from any growing
+  // total, or it would just chase whatever is on order.
+  const capacityEstimate = estimateCapacityFromCurrentCount({
+    fullBoxes: data.countFullBoxes,
+    partialPieces: data.countPartialPieces,
+  });
+  const capacity = calculateCapacityStatus({
+    currentUnits: capacityEstimate.practicalCapacityBoxes,
+    incomingUnits: managerBoxes,
+    practicalCapacity: capacityEstimate.practicalCapacityBoxes,
+    hardCapacity: capacityEstimate.hardCapacityBoxes,
+  });
+
   return {
     status: "ready",
     onHandPieces,
@@ -149,6 +166,8 @@ function computeRow(data) {
     suggestion,
     managerBoxes,
     projectedEndStock,
+    capacityEstimate,
+    capacity,
     blockers,
   };
 }
@@ -450,6 +469,7 @@ function renderCountSection(data, row) {
         ${hasCount ? `<button class="secondary" id="done-editing-count">Done</button>` : ""}
       </div>
       <p class="reason">Box size (192 pieces) is an unverified estimate. Supplier minimum is unknown.</p>
+      <p class="reason">Freezer capacity is also estimated — from today's count rounded up, plus one box of headroom — not a real measured zone size.</p>
     </div>
   `;
 }
@@ -585,12 +605,16 @@ function renderStatBar(row) {
   const productsNeedReview = row.status === "ready" ? 0 : 1;
   const boxesProposed = row.status === "ready" ? row.managerBoxes : 0;
   const draftStatus = state.draft?.status === "final" ? "Finalized" : "Draft";
+  const capacityLabel =
+    row.status === "ready"
+      ? `${row.capacity.status[0].toUpperCase()}${row.capacity.status.slice(1)} (est.)`
+      : "Not configured";
 
   return `
     <div class="stat-bar">
       <div class="stat"><b>${productsNeedReview}</b><span>Needs review</span></div>
       <div class="stat"><b>${boxesProposed}</b><span>Boxes proposed</span></div>
-      <div class="stat"><b>Not configured</b><span>Freezer capacity</span></div>
+      <div class="stat"><b>${capacityLabel}</b><span>Freezer capacity</span></div>
       <div class="stat"><b>${draftStatus}</b><span>Status</span></div>
     </div>
   `;
@@ -621,7 +645,14 @@ function renderFinalizeBar(row) {
       <div class="totals">
         <div><span class="label">Boxes</span><b>${s ? s.suggestedBoxes : "—"}</b></div>
         <div><span class="label">Supplier cost</span><b class="cost-note">Not available</b></div>
-        <div><span class="label">Capacity</span><b class="cost-note">Not configured</b></div>
+        <div>
+          <span class="label">Capacity (estimate)</span>
+          ${
+            row.status === "ready"
+              ? `<b>${row.capacityEstimate.practicalCapacityBoxes} / ${row.capacityEstimate.hardCapacityBoxes} boxes — ${row.capacity.status}</b>`
+              : `<b class="cost-note">Not configured</b>`
+          }
+        </div>
       </div>
       <button class="primary" id="finalize" ${canFinalize ? "" : "disabled"}>Finalize Next Order List</button>
     </div>
