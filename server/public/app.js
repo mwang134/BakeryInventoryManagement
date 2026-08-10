@@ -885,10 +885,8 @@ function renderProductionWorkspace() {
       state.productionWorkspaceTab === "current"
         ? `
           ${renderProductionStatBar(rows, finality)}
-          <div class="list-layout">
-            ${renderProductionList(rows)}
-            ${renderProductionEvidence(rows)}
-          </div>
+          ${renderProductionList(rows)}
+          ${renderProductionEvidence(rows)}
           ${renderReserveCheck(rows)}
           ${renderProductionFinalizeBar(finality)}
         `
