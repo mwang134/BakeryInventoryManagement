@@ -42,7 +42,24 @@ body {
   display: grid;
   grid-template-columns: 15rem 1fr;
   min-height: 100vh;
+  transition: grid-template-columns 0.18s ease;
 }
+
+.shell.sidebar-collapsed {
+  grid-template-columns: 4.25rem 1fr;
+}
+
+.shell.sidebar-collapsed .brand-name,
+.shell.sidebar-collapsed .nav-item span:not(.nav-badge),
+.shell.sidebar-collapsed .nav-badge,
+.shell.sidebar-collapsed .nav-icon-flag,
+.shell.sidebar-collapsed .sidebar-foot {
+  display: none;
+}
+
+.shell.sidebar-collapsed .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+.shell.sidebar-collapsed .nav-item { justify-content: center; padding-left: 0; padding-right: 0; }
+.shell.sidebar-collapsed .sidebar-toggle svg { transform: rotate(180deg); }
 
 /* ---------- Sidebar ---------- */
 
@@ -65,6 +82,20 @@ body {
   margin-bottom: 1rem;
   border-bottom: 1px solid rgba(243, 233, 216, 0.12);
 }
+
+.sidebar-toggle {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--cream-dim);
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+}
+.sidebar-toggle:hover { background: rgba(243, 233, 216, 0.1); color: var(--cream); }
+.shell.sidebar-collapsed .sidebar-toggle { margin-left: 0; }
 
 .brand-mark {
   display: grid;

@@ -234,6 +234,8 @@ const state = {
   productionHistory: [],
 
   wasteSelectedItemKey: TOMORROWS_PRODUCTION_ITEMS[0].itemKey,
+
+  sidebarCollapsed: localStorage.getItem("sidebarCollapsed") === "true",
 };
 
 async function loadActiveDraft() {
@@ -1047,6 +1049,8 @@ function renderWasteWorkspace() {
 }
 
 function render() {
+  document.querySelector("#shell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  document.querySelector("#sidebar-toggle").title = state.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
   renderSidenav();
   const app = document.querySelector("#app");
   if (state.view === "overview") app.innerHTML = renderOverview();
@@ -1057,6 +1061,13 @@ function render() {
 
 function bindEvents() {
   document.addEventListener("click", async (event) => {
+    if (event.target.closest("#sidebar-toggle")) {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      localStorage.setItem("sidebarCollapsed", String(state.sidebarCollapsed));
+      render();
+      return;
+    }
+
     const nav = event.target.closest("[data-nav]");
     if (nav && !nav.disabled) {
       if (nav.dataset.nav === "overview") state.view = "overview";
