@@ -250,18 +250,29 @@ p.page-subtitle { color: var(--ink-soft); margin: 0 0 2rem; }
   background: linear-gradient(90deg, var(--gold), var(--terracotta));
 }
 
-.plan-next-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
+/* ---------- Urgency-tiered homepage ---------- */
 
-.ghost-card {
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  padding: 1.25rem 1.5rem;
-  background: var(--line-soft);
-  opacity: 0.75;
+.urgency-group { margin-bottom: 1.75rem; }
+
+.urgency-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
 }
-.ghost-card b { font-family: var(--font-display); }
-.ghost-card .soon { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
-.ghost-card p { color: var(--ink-soft); font-size: 0.85rem; margin: 0.35rem 0 0; }
+.urgency-header b { font-family: var(--font-display); font-size: 1.15rem; margin-right: 0.6rem; }
+.urgency-header span { color: var(--ink-soft); font-size: 0.85rem; }
+
+.urgency-group .kpi-card + .kpi-card { margin-top: 1rem; }
+
+.urgency-group.act-now .kpi-card { border-color: var(--brick); box-shadow: var(--shadow-2); }
+
+.compact-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+}
 
 /* ---------- Workspace header ---------- */
 

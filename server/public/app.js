@@ -12,6 +12,10 @@ import {
   estimateCapacityFromCurrentCount,
 } from "/lib/next-order-list.js";
 import { calculateWasteFlag } from "/lib/waste-review.js";
+// Reused as-is from the old prototype: a generic, non-sample-specific
+// grouping utility (already tested in dashboard.test.js), not tied to any
+// invented business data - the only piece of the old dashboard kept.
+import { groupActionsByUrgency } from "/lib/dashboard.js";
 import {
   calculateProductionSuggestion,
   needsReview,
@@ -236,6 +240,10 @@ const state = {
   wasteSelectedItemKey: TOMORROWS_PRODUCTION_ITEMS[0].itemKey,
 
   sidebarCollapsed: localStorage.getItem("sidebarCollapsed") === "true",
+
+  // Act-now is always fully visible per plans/URGENCY-FIRST-MANAGER-DASHBOARD.md
+  // (authorized 2026-07-27); only the lower-urgency groups collapse.
+  expandedGroups: { "review-today": true, "plan-next": false },
 };
 
 async function loadActiveDraft() {
@@ -377,25 +385,28 @@ function renderSidenav() {
 
 // ---------- Overview ----------
 
-function renderOverview() {
+// Builds one action per KPI, each carrying its own urgency. Next Order
+// List's urgency is dynamic (a real block/shortage promotes it to Act now);
+// Tomorrow's Production is a routine daily task (Review today); Waste
+// Pattern Review is a periodic diagnostic (Plan next) - matching how each
+// KPI was originally scoped, not an arbitrary assignment.
+function buildHomeActions() {
   const row = state.draft ? computeRow(state.draft.data) : { status: "count-needed" };
   const reviewedCount = row.status === "ready" ? 1 : 0;
   const totalCount = 1;
   const lastEdited = formatTime(state.draft?.updatedAt);
-
   const statusLabel =
     row.status === "count-needed"
       ? "Needs freezer count"
       : row.status === "ready"
         ? `${row.suggestion.suggestedBoxes} box${row.suggestion.suggestedBoxes === 1 ? "" : "es"} suggested`
         : "Needs remaining dates";
-
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const nextOrderUrgent =
+    row.status !== "ready" || row.freshness?.needsRecount || row.preArrival?.status === "Short before delivery";
 
   const productionRows = state.productionDraft ? computeProductionRows(state.productionDraft.data) : [];
-  const productionFlaggedCount = productionRows.filter((row) => row.flagged).length;
-  const productionReviewedCount = productionRows.filter((row) => row.flagged && row.reviewAction).length;
+  const productionFlaggedCount = productionRows.filter((r) => r.flagged).length;
+  const productionReviewedCount = productionRows.filter((r) => r.flagged && r.reviewAction).length;
   const productionLastEdited = formatTime(state.productionDraft?.updatedAt);
   const productionDetail = !state.productionDraft
     ? "Loading…"
@@ -410,40 +421,97 @@ function renderOverview() {
       ? "No unusually high leftover patterns"
       : `${wasteFlaggedCount} pastr${wasteFlaggedCount === 1 ? "y" : "ies"} with unusually high leftovers`;
 
+  return [
+    {
+      id: "next-order-list",
+      urgency: nextOrderUrgent ? "act-now" : "review-today",
+      view: "workspace",
+      badgeHtml: statusBadge(row) || `<span class="badge muted">Draft in progress</span>`,
+      title: "Next Order List",
+      detail: `${statusLabel} · Croissant dough`,
+      progressPercent: (reviewedCount / totalCount) * 100,
+      meta: `${reviewedCount} of ${totalCount} products reviewed${lastEdited ? ` · Last edited ${lastEdited}` : ""}`,
+    },
+    {
+      id: "tomorrows-production",
+      urgency: "review-today",
+      view: "production",
+      badgeHtml: `<span class="badge ${productionFlaggedCount > 0 ? "warning" : "ok"}">${productionFlaggedCount > 0 ? `${productionFlaggedCount} flagged` : "All clear"}</span>`,
+      title: "Tomorrow's Production",
+      detail: productionDetail,
+      progressPercent: productionFlaggedCount ? (productionReviewedCount / productionFlaggedCount) * 100 : 100,
+      meta: `${productionReviewedCount} of ${productionFlaggedCount} flagged products reviewed${productionLastEdited ? ` · Last edited ${productionLastEdited}` : ""}`,
+    },
+    {
+      id: "waste-review",
+      urgency: "plan-next",
+      view: "waste",
+      badgeHtml: `<span class="badge ${wasteFlaggedCount > 0 ? "warning" : "ok"}">${wasteFlaggedCount > 0 ? `${wasteFlaggedCount} flagged` : "All clear"}</span>`,
+      title: "Waste Pattern Review",
+      detail: wasteDetail,
+      progressPercent: null,
+      meta: "Comparable-day leftover evidence · SIMULATED data",
+    },
+  ];
+}
+
+function renderActionCard(action) {
+  return `
+    <button class="kpi-card" data-go-view="${action.view}">
+      <div class="kpi-top">${action.badgeHtml}</div>
+      <div class="kpi-title">${action.title}</div>
+      <div class="kpi-detail">${action.detail}</div>
+      ${action.progressPercent !== null ? `<div class="progress-track"><div class="progress-fill" style="width:${action.progressPercent}%"></div></div>` : ""}
+      <div class="kpi-meta">${action.meta}</div>
+    </button>
+  `;
+}
+
+function renderUrgencyGroup(urgency, label, subtitle, actions) {
+  const isActNow = urgency === "act-now";
+  const expanded = isActNow || state.expandedGroups[urgency];
+
+  if (actions.length === 0) {
+    return `
+      <section class="urgency-group ${urgency}">
+        <div class="urgency-header"><b>${label}</b><span>${subtitle}</span></div>
+        <p class="reason">${isActNow ? "No immediate operational blocks." : "Nothing here right now."}</p>
+      </section>
+    `;
+  }
+
+  const list = actions.map(renderActionCard).join("");
+  const compactPreview = `
+    <button class="kpi-card compact-preview" data-toggle-group="${urgency}">
+      <div class="kpi-detail"><b>${actions.length} item${actions.length === 1 ? "" : "s"}</b> — next: ${actions[0].title}</div>
+      <span class="text-link">Expand</span>
+    </button>
+  `;
+
+  return `
+    <section class="urgency-group ${urgency}">
+      <div class="urgency-header">
+        <div><b>${label}</b><span>${subtitle}</span></div>
+        ${!isActNow ? `<button class="text-link" data-toggle-group="${urgency}">${expanded ? "Collapse" : "Expand"}</button>` : ""}
+      </div>
+      ${expanded ? list : compactPreview}
+    </section>
+  `;
+}
+
+function renderOverview() {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const grouped = groupActionsByUrgency(buildHomeActions());
+
   return `
     <p class="eyebrow">Overview</p>
     <h1 class="page-title">${greeting}, Manager</h1>
     <p class="page-subtitle">Continue the most important work first.</p>
 
-    <h2 class="section-title">Review today</h2>
-    <button class="kpi-card" id="open-workspace">
-      <div class="kpi-top">
-        ${statusBadge(row) || `<span class="badge muted">Draft in progress</span>`}
-      </div>
-      <div class="kpi-title">Next Order List</div>
-      <div class="kpi-detail">${statusLabel} · Croissant dough</div>
-      <div class="progress-track"><div class="progress-fill" style="width:${(reviewedCount / totalCount) * 100}%"></div></div>
-      <div class="kpi-meta">${reviewedCount} of ${totalCount} products reviewed${lastEdited ? ` · Last edited ${lastEdited}` : ""}</div>
-    </button>
-
-    <button class="kpi-card" id="open-production" style="margin-top:1rem">
-      <div class="kpi-top">
-        <span class="badge ${productionFlaggedCount > 0 ? "warning" : "ok"}">${productionFlaggedCount > 0 ? `${productionFlaggedCount} flagged` : "All clear"}</span>
-      </div>
-      <div class="kpi-title">Tomorrow's Production</div>
-      <div class="kpi-detail">${productionDetail}</div>
-      <div class="progress-track"><div class="progress-fill" style="width:${productionFlaggedCount ? (productionReviewedCount / productionFlaggedCount) * 100 : 100}%"></div></div>
-      <div class="kpi-meta">${productionReviewedCount} of ${productionFlaggedCount} flagged products reviewed${productionLastEdited ? ` · Last edited ${productionLastEdited}` : ""}</div>
-    </button>
-
-    <button class="kpi-card" id="open-waste" style="margin-top:1rem">
-      <div class="kpi-top">
-        <span class="badge ${wasteFlaggedCount > 0 ? "warning" : "ok"}">${wasteFlaggedCount > 0 ? `${wasteFlaggedCount} flagged` : "All clear"}</span>
-      </div>
-      <div class="kpi-title">Waste Pattern Review</div>
-      <div class="kpi-detail">${wasteDetail}</div>
-      <div class="kpi-meta">Comparable-day leftover evidence · SIMULATED data</div>
-    </button>
+    ${renderUrgencyGroup("act-now", "Act now", "Immediate operational blocks", grouped["act-now"])}
+    ${renderUrgencyGroup("review-today", "Review today", "Important decisions before close", grouped["review-today"])}
+    ${renderUrgencyGroup("plan-next", "Plan next", "Diagnostic and lower-urgency review", grouped["plan-next"])}
   `;
 }
 
@@ -1078,18 +1146,23 @@ function bindEvents() {
       return;
     }
 
-    if (event.target.closest("#open-workspace") || event.target.closest("#back-to-overview")) {
-      state.view = event.target.closest("#open-workspace") ? "workspace" : "overview";
+    if (event.target.closest("[data-go-view]")) {
+      state.view = event.target.closest("[data-go-view]").dataset.goView;
       render();
       return;
     }
-    if (event.target.closest("#open-production") || event.target.closest("#back-to-overview-from-production")) {
-      state.view = event.target.closest("#open-production") ? "production" : "overview";
+    if (
+      event.target.closest("#back-to-overview") ||
+      event.target.closest("#back-to-overview-from-production") ||
+      event.target.closest("#back-to-overview-from-waste")
+    ) {
+      state.view = "overview";
       render();
       return;
     }
-    if (event.target.closest("#open-waste") || event.target.closest("#back-to-overview-from-waste")) {
-      state.view = event.target.closest("#open-waste") ? "waste" : "overview";
+    if (event.target.closest("[data-toggle-group]")) {
+      const urgency = event.target.closest("[data-toggle-group]").dataset.toggleGroup;
+      state.expandedGroups[urgency] = !state.expandedGroups[urgency];
       render();
       return;
     }
