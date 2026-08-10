@@ -384,6 +384,7 @@ th {
 td { text-align: left; padding: 0.9rem 0.5rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 tr:hover td { background: var(--line-soft); }
 tr.selected td { background: var(--amber-bg); }
+tr.clickable-row { cursor: pointer; }
 
 .action-group { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .action-group button.secondary { padding: 0.4rem 0.7rem; font-size: 0.82rem; }

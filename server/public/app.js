@@ -975,8 +975,8 @@ function renderWasteList(rows) {
           ${ranked
             .map(
               (row) => `
-                <tr class="${row.item.itemKey === state.wasteSelectedItemKey ? "selected" : ""}">
-                  <td><button class="text-link" data-select-waste="${row.item.itemKey}">${row.item.displayName}</button></td>
+                <tr class="clickable-row ${row.item.itemKey === state.wasteSelectedItemKey ? "selected" : ""}" data-select-waste="${row.item.itemKey}">
+                  <td><span class="text-link" style="pointer-events:none">${row.item.displayName}</span></td>
                   <td>${row.waste.mostRecentLeftover ?? "—"}</td>
                   <td>${row.waste.percentAboveBaseline === null ? "—" : `${row.waste.percentAboveBaseline === Infinity ? ">1000" : Math.round(row.waste.percentAboveBaseline * 100)}%`}</td>
                   <td>${wasteOutcomeBadge(row.waste)}</td>
