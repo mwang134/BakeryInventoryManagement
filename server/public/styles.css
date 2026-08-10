@@ -49,6 +49,7 @@ body {
   grid-template-columns: 4.25rem 1fr;
 }
 
+.shell.sidebar-collapsed .brand-mark,
 .shell.sidebar-collapsed .brand-name,
 .shell.sidebar-collapsed .nav-item span:not(.nav-badge),
 .shell.sidebar-collapsed .nav-badge,
