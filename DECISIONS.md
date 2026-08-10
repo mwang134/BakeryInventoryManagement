@@ -222,4 +222,22 @@ Decision:
 Reason:
 - Mirrors the same convergence discipline already applied to Next Order List: real data where available, clearly labeled placeholders where not, and no invented thresholds presented as settled without an explicit decision.
 
-Status: active convergence contract for Tomorrow's Production. Not yet fully BUILD-ready: the ready-to-bake opening-batch/reserve split behavior, the extra-batch formalization, and real (non-simulated) comparable-day data all remain open.
+Status: active convergence contract for Tomorrow's Production. Not yet fully BUILD-ready: real (non-simulated) comparable-day data remains open. The extra-batch/reserve rule below is now frozen.
+
+## 2026-08-09 — Freeze the extra-batch reserve carryover rule
+
+Decision:
+- Reserve-eligible items are exactly those whose production quantity includes a "+ extra batch" note in `tous-les-jours-menu-blueprint.csv` (e.g., Pain Au Chocolat, Chocolate Avalanche, Spinach Feta Danish). This is derived from data already provided, not a new judgment call.
+- The suggested/decided total for a product ("this many needs to exist") is never reduced by carryover - it stays exactly what the suggestion engine or manager decision produced.
+- Reserve dough is prepped the day before it's baked (shaped/pulled from the freezer, then refrigerated), matching the existing shape-required production pattern. Any extra-batch reserve not used the day it was prepped survives exactly **one additional day** and no longer - if still unused after that one extra day, it expires and must be recorded as expired/unused rather than silently dropped or allowed to carry forward again.
+- Every evening at **closing**, the manager confirms (quick-entry, not a form - a stepper/tap adjustment per item) how much extra-batch reserve is actually sitting prepped-but-unbaked. Only items that could plausibly have leftover reserve appear in that day's check - an item whose extra batch fully sold out that day is skipped entirely, keeping the daily list short.
+- That single confirmed number feeds two calculations without being entered twice:
+  - **Net prep instruction** on the baker sheet: suggested total minus confirmed carryover (floored at zero).
+  - **Fresh dough pull** in the Next Order List math: the dough for carried-over reserve was already pulled from the freezer when it was originally prepped, so it must not be counted again as dough needed for tomorrow. Next Order List reads this same confirmed number rather than the manager entering it separately there.
+- Tomorrow's production plan is finalized at **today's closing time**, not the next morning - this matches the real constraint that shape-required dough for tomorrow's opening batch needs to be prepped tonight, not discovered as a plan the next morning.
+
+Reason:
+- Resolves a real, currently-existing operational risk Matthew confirmed: without this, fresh dough needs get double-counted (once when reserve was originally prepped, again when the next day's plan assumes it all needs fresh dough), which would inflate supplier-order suggestions.
+- Keeps the manager-facing check small and low-friction: short list, only items that need it, quick-tap entry, one confirmation feeding two features rather than two separate entry points.
+
+Status: active. Implementation next.

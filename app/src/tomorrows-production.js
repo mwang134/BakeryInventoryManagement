@@ -94,3 +94,29 @@ export function canFinalizeProductionPlan({ products }) {
     unreviewedProductIds: unreviewed.map((product) => product.id),
   };
 }
+
+// Extra-batch reserve rule, frozen in DECISIONS.md (2026-08-09). The
+// suggested/decided total never changes because of carryover - only the
+// *net new prep* and the *fresh dough pull* shrink by the confirmed amount.
+export function calculateReserveCarryoverImpact({ suggestedTotal, confirmedCarryover }) {
+  const netPrepNeeded = Math.max(0, suggestedTotal - confirmedCarryover);
+  const freshDoughPiecesAvoided = Math.min(confirmedCarryover, suggestedTotal);
+
+  return { suggestedTotal, confirmedCarryover, netPrepNeeded, freshDoughPiecesAvoided };
+}
+
+// Reserve survives exactly one extra day. Whatever isn't used by then
+// expires - it must be recorded, not silently dropped or rolled forward
+// again to a third day.
+export function resolveReserveLifecycle({ carryoverEnteringToday, usedToday }) {
+  return {
+    usedToday,
+    expiredUnused: Math.max(0, carryoverEnteringToday - usedToday),
+  };
+}
+
+// Keeps the daily closing check short: an item only appears if today's
+// production actually included an extra batch to begin with.
+export function shouldAppearInReserveCheck({ todaysExtraBatchQuantity }) {
+  return todaysExtraBatchQuantity > 0;
+}
