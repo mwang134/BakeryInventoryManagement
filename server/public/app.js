@@ -9,6 +9,15 @@ import {
   enumerateDatesInclusive,
   classifyDayType,
 } from "/lib/next-order-list.js";
+import {
+  calculateProductionSuggestion,
+  needsReview,
+  resolveManagerDecision,
+  canFinalizeProductionPlan,
+  calculateReserveCarryoverImpact,
+  shouldAppearInReserveCheck,
+} from "/lib/tomorrows-production.js";
+import { TOMORROWS_PRODUCTION_ITEMS } from "/productionData.js";
 
 // The one currently-validated redacted SKU contract
 // (data/redacted-sku-contracts/croissant-dough.md). Box size is explicitly
@@ -144,6 +153,35 @@ function computeRow(data) {
   };
 }
 
+// Builds the full per-item picture for Tomorrow's Production: the
+// suggestion, whether it needs review, the manager's recorded decision (if
+// any), and - for reserve-eligible items - the carryover impact.
+function computeProductionRows(data) {
+  const decisions = data.decisions ?? {};
+  const reserveEntries = data.reserveEntries ?? {};
+
+  return TOMORROWS_PRODUCTION_ITEMS.map((item) => {
+    const suggestion = calculateProductionSuggestion({
+      currentQuantity: item.currentQuantity,
+      comparableDays: item.comparableDays,
+    });
+    const flagged = needsReview(suggestion);
+    const reviewAction = decisions[item.itemKey] ?? null;
+    const finalQuantity = reviewAction ? reviewAction.finalQuantity : flagged ? null : item.currentQuantity;
+
+    let reserve = null;
+    if (item.hasReserve && shouldAppearInReserveCheck({ todaysExtraBatchQuantity: item.reserveExtraQuantity })) {
+      const confirmedCarryover = reserveEntries[item.itemKey] ?? 0;
+      reserve = calculateReserveCarryoverImpact({
+        suggestedTotal: finalQuantity ?? item.currentQuantity,
+        confirmedCarryover,
+      });
+    }
+
+    return { item, suggestion, flagged, reviewAction, finalQuantity, reserve };
+  });
+}
+
 const state = {
   view: "overview",
   workspaceTab: "current",
@@ -154,6 +192,13 @@ const state = {
   saveState: "idle", // idle | saving | saved
   draft: null,
   history: [],
+
+  productionWorkspaceTab: "current",
+  productionSelectedItemKey: TOMORROWS_PRODUCTION_ITEMS[0].itemKey,
+  productionFinalizeDialogOpen: false,
+  productionSaveState: "idle",
+  productionDraft: null,
+  productionHistory: [],
 };
 
 async function loadActiveDraft() {
@@ -190,6 +235,63 @@ async function finalizeDraft(managerInitials) {
   render();
 }
 
+async function loadActiveProductionDraft() {
+  state.productionDraft = await fetch("/production/draft").then((r) => r.json());
+}
+
+async function loadProductionHistory() {
+  state.productionHistory = await fetch("/production/history").then((r) => r.json());
+}
+
+async function saveProductionDraft(patch) {
+  state.productionSaveState = "saving";
+  render();
+  const nextData = {
+    ...state.productionDraft.data,
+    ...patch,
+    decisions: { ...state.productionDraft.data.decisions, ...(patch.decisions ?? {}) },
+    reserveEntries: { ...state.productionDraft.data.reserveEntries, ...(patch.reserveEntries ?? {}) },
+  };
+  state.productionDraft = await fetch("/production/draft", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(nextData),
+  }).then((r) => r.json());
+  state.productionSaveState = "saved";
+  render();
+}
+
+// Removing a decision means deleting a key, which the merge-only
+// saveProductionDraft can't do (it only adds/overwrites) - this replaces
+// the whole decisions object instead.
+async function clearProductionDecision(itemKey) {
+  state.productionSaveState = "saving";
+  render();
+  const nextDecisions = { ...state.productionDraft.data.decisions };
+  delete nextDecisions[itemKey];
+  const nextData = { ...state.productionDraft.data, decisions: nextDecisions };
+  state.productionDraft = await fetch("/production/draft", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(nextData),
+  }).then((r) => r.json());
+  state.productionSaveState = "saved";
+  render();
+}
+
+async function finalizeProductionDraft(managerInitials) {
+  await fetch(`/production/draft/${state.productionDraft.id}/finalize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ managerInitials }),
+  });
+  state.productionFinalizeDialogOpen = false;
+  await loadActiveProductionDraft();
+  state.productionWorkspaceTab = "history";
+  await loadProductionHistory();
+  render();
+}
+
 function statusBadge(row) {
   if (row.status === "count-needed") return `<span class="badge muted">Count needed</span>`;
   if (row.status === "dates-needed") return `<span class="badge muted">Dates needed</span>`;
@@ -213,14 +315,15 @@ function renderSidenav() {
     { id: "overview", label: "Overview", icon: icon.overview, enabled: true },
     { id: "restock", label: "Next Order List", icon: icon.restock, enabled: true },
     { id: "waste", label: "Waste review", icon: icon.waste, enabled: false, flag: icon.camera },
-    { id: "production", label: "Production plan", icon: icon.production, enabled: false },
+    { id: "production", label: "Production plan", icon: icon.production, enabled: true },
   ];
 
   document.querySelector("#sidenav").innerHTML = items
     .map((item) => {
       const active =
         (item.id === "overview" && state.view === "overview") ||
-        (item.id === "restock" && state.view === "workspace");
+        (item.id === "restock" && state.view === "workspace") ||
+        (item.id === "production" && state.view === "production");
       return `
         <button class="nav-item ${active ? "active" : ""} ${item.enabled ? "" : "disabled"}"
                 data-nav="${item.id}" ${item.enabled ? "" : "disabled"}>
@@ -252,6 +355,16 @@ function renderOverview() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
+  const productionRows = state.productionDraft ? computeProductionRows(state.productionDraft.data) : [];
+  const productionFlaggedCount = productionRows.filter((row) => row.flagged).length;
+  const productionReviewedCount = productionRows.filter((row) => row.flagged && row.reviewAction).length;
+  const productionLastEdited = formatTime(state.productionDraft?.updatedAt);
+  const productionDetail = !state.productionDraft
+    ? "Loading…"
+    : productionFlaggedCount === 0
+      ? "No products need review right now"
+      : `${productionFlaggedCount} product${productionFlaggedCount === 1 ? "" : "s"} need review`;
+
   return `
     <p class="eyebrow">Overview</p>
     <h1 class="page-title">${greeting}, Manager</h1>
@@ -268,17 +381,22 @@ function renderOverview() {
       <div class="kpi-meta">${reviewedCount} of ${totalCount} products reviewed${lastEdited ? ` · Last edited ${lastEdited}` : ""}</div>
     </button>
 
+    <button class="kpi-card" id="open-production" style="margin-top:1rem">
+      <div class="kpi-top">
+        <span class="badge ${productionFlaggedCount > 0 ? "warning" : "ok"}">${productionFlaggedCount > 0 ? `${productionFlaggedCount} flagged` : "All clear"}</span>
+      </div>
+      <div class="kpi-title">Tomorrow's Production</div>
+      <div class="kpi-detail">${productionDetail}</div>
+      <div class="progress-track"><div class="progress-fill" style="width:${productionFlaggedCount ? (productionReviewedCount / productionFlaggedCount) * 100 : 100}%"></div></div>
+      <div class="kpi-meta">${productionReviewedCount} of ${productionFlaggedCount} flagged products reviewed${productionLastEdited ? ` · Last edited ${productionLastEdited}` : ""}</div>
+    </button>
+
     <h2 class="section-title">Plan next</h2>
     <div class="plan-next-grid">
       <div class="ghost-card">
         <div class="soon">Coming soon</div>
         <b>Waste review</b>
         <p>Comparable-day leftover patterns and supplier waste cost. ${icon.camera} Leftover photo capture is planned here.</p>
-      </div>
-      <div class="ghost-card">
-        <div class="soon">Coming soon</div>
-        <b>Production plan</b>
-        <p>Tomorrow's production quantities with review flags.</p>
       </div>
     </div>
   `;
@@ -546,9 +664,245 @@ function renderWorkspace() {
   `;
 }
 
+// ---------- Tomorrow's Production workspace ----------
+
+function flagBadges(row) {
+  const badges = [];
+  if (row.suggestion.status === "Limited evidence") badges.push(`<span class="badge muted">Limited evidence</span>`);
+  if (row.suggestion.changeLabel === "Large Quantity Change") badges.push(`<span class="badge danger">Large Quantity Change</span>`);
+  else if (row.suggestion.changeLabel === "Quantity change") badges.push(`<span class="badge warning">Quantity change</span>`);
+  if (row.suggestion.hasUnusualContext) badges.push(`<span class="badge warning">Unusual context</span>`);
+  return badges.join(" ") || `<span class="badge ok">No change</span>`;
+}
+
+function renderProductionActionCell(row) {
+  if (!row.flagged) {
+    return `<span class="reason">No review needed — using current (${row.item.currentQuantity}).</span>`;
+  }
+  if (row.reviewAction) {
+    const labels = { "use-suggestion": "Used suggestion", "keep-current": "Kept current", custom: "Custom" };
+    return `
+      <span class="badge ok">${labels[row.reviewAction.action]}: ${row.reviewAction.finalQuantity}</span>
+      <button class="text-link" data-change-decision="${row.item.itemKey}">Change</button>
+    `;
+  }
+  const canUseSuggestion = row.suggestion.suggestedQuantity !== null;
+  return `
+    <div class="action-group">
+      ${canUseSuggestion ? `<button class="secondary" data-decide="${row.item.itemKey}" data-action="use-suggestion">Use suggestion (${row.suggestion.suggestedQuantity})</button>` : ""}
+      <button class="secondary" data-decide="${row.item.itemKey}" data-action="keep-current">Keep current (${row.item.currentQuantity})</button>
+      <input type="number" min="0" step="1" class="custom-qty-input" data-custom-input="${row.item.itemKey}" placeholder="Custom" style="width:5.5rem" />
+      <button class="secondary" data-decide="${row.item.itemKey}" data-action="custom">Set</button>
+    </div>
+  `;
+}
+
+function renderProductionList(rows) {
+  return `
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Product</th><th>Current</th><th>Suggested</th><th>Flags</th><th>Manager action</th></tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (row) => `
+                <tr class="${row.item.itemKey === state.productionSelectedItemKey ? "selected" : ""}">
+                  <td>
+                    <button class="text-link" data-select-product="${row.item.itemKey}">${row.item.displayName}</button>
+                  </td>
+                  <td>${row.item.currentQuantity}</td>
+                  <td>${row.suggestion.suggestedQuantity ?? "—"}</td>
+                  <td>${flagBadges(row)}</td>
+                  <td>${renderProductionActionCell(row)}</td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProductionEvidence(rows) {
+  const row = rows.find((r) => r.item.itemKey === state.productionSelectedItemKey) ?? rows[0];
+  const max = Math.max(...row.item.comparableDays.map((d) => d.sold), row.item.currentQuantity, 1);
+
+  return `
+    <div class="card side-panel">
+      <h3>${row.item.displayName} — comparable Tuesdays</h3>
+      <p class="reason">SIMULATED evidence, not real sales data — see data/tomorrows-production-SIMULATED-comparable-day-sales.md.</p>
+      <div class="bars">
+        ${row.item.comparableDays
+          .map((day) => {
+            const height = Math.max(4, Math.round((day.sold / max) * 130));
+            return `
+              <div class="bar-col">
+                <div class="bar-value">${day.sold}${day.sellout ? " ⚑" : ""}</div>
+                <div class="bar" style="height:${height}px; ${day.sellout ? "background:linear-gradient(180deg,var(--brick),var(--terracotta-dark))" : ""}"></div>
+                <div class="bar-label">${day.date.slice(5)}</div>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+      <p class="reason">Suggested: ${row.suggestion.suggestedQuantity ?? "n/a"} — ${row.suggestion.reason}</p>
+      ${row.suggestion.unusualContextNotes.length ? `<p class="caveat">${row.suggestion.unusualContextNotes.join("; ")}</p>` : ""}
+    </div>
+  `;
+}
+
+function renderReserveCheck(rows) {
+  const reserveRows = rows.filter((r) => r.reserve);
+  if (!reserveRows.length) {
+    return "";
+  }
+  return `
+    <div class="card">
+      <h3 style="margin-top:0">Closing reserve check</h3>
+      <p class="reason">Only items with an extra batch today appear here. Confirm what's actually sitting prepped-but-unbaked — it survives one more day only.</p>
+      ${reserveRows
+        .map(
+          (row) => `
+            <div class="row" style="margin-bottom:0.75rem">
+              <label>${row.item.displayName} carried over
+                <input type="number" min="0" step="1" data-reserve-input="${row.item.itemKey}" value="${row.reserve.confirmedCarryover}" style="width:6rem" />
+              </label>
+              <span class="reason">Net prep needed: ${row.reserve.netPrepNeeded} (of ${row.reserve.suggestedTotal} total)</span>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderProductionStatBar(rows, finality) {
+  const flaggedCount = rows.filter((r) => r.flagged).length;
+  const reviewedCount = rows.filter((r) => r.flagged && r.reviewAction).length;
+  return `
+    <div class="stat-bar">
+      <div class="stat"><b>${flaggedCount - reviewedCount}</b><span>Awaiting decision</span></div>
+      <div class="stat"><b>${reviewedCount}/${flaggedCount}</b><span>Reviewed</span></div>
+      <div class="stat"><b>${rows.length}</b><span>Products tracked</span></div>
+      <div class="stat"><b>${finality.canFinalize ? "Ready" : "Blocked"}</b><span>Finalize status</span></div>
+    </div>
+  `;
+}
+
+function renderProductionFinalizeBar(finality) {
+  if (state.productionFinalizeDialogOpen) {
+    return `
+      <div class="finalize-bar">
+        <div class="finalize-inline">
+          <label style="color:var(--cream)">Manager initials
+            <input type="text" id="productionManagerInitials" placeholder="e.g. MW" autofocus />
+          </label>
+        </div>
+        <div class="finalize-inline">
+          <button class="primary" id="confirmProductionFinalize">Confirm finalize</button>
+          <button class="secondary" id="cancelProductionFinalize" style="color:var(--cream);border-color:rgba(243,233,216,0.3)">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="finalize-bar">
+      <div class="totals">
+        <div><span class="label">Unreviewed</span><b>${finality.unreviewedCount}</b></div>
+      </div>
+      <button class="primary" id="finalizeProduction" ${finality.canFinalize ? "" : "disabled"}>Finalize tomorrow's production plan</button>
+    </div>
+  `;
+}
+
+function bakerSheetRow(itemKey, quantity) {
+  const item = TOMORROWS_PRODUCTION_ITEMS.find((i) => i.itemKey === itemKey);
+  if (!item) return "";
+  if (item.hasReserve) {
+    return `
+      <tr>
+        <td>${item.displayName}</td>
+        <td><b>Opening batch — bake for 9:00 AM:</b> ${item.reserveOpeningQuantity}<br/><b>Reserve — prepare, do not bake yet:</b> ${Math.max(0, quantity - item.reserveOpeningQuantity)}<br/><b>Total prepared/planned:</b> ${quantity}</td>
+      </tr>
+    `;
+  }
+  return `<tr><td>${item.displayName}</td><td>${quantity}</td></tr>`;
+}
+
+function renderProductionHistory() {
+  if (!state.productionHistory.length) {
+    return `<div class="card">No finalized production plans yet.</div>`;
+  }
+  return state.productionHistory
+    .map((record) => {
+      const decisions = record.data.decisions ?? {};
+      return `
+        <div class="card history-card">
+          <div class="history-head">
+            <b>Finalized ${new Date(record.finalizedAt).toLocaleString()}</b>
+            <span class="badge muted">by ${record.managerInitials}</span>
+          </div>
+          <table>
+            <thead><tr><th>Product</th><th>Baker sheet</th></tr></thead>
+            <tbody>
+              ${TOMORROWS_PRODUCTION_ITEMS.map((item) =>
+                bakerSheetRow(item.itemKey, decisions[item.itemKey]?.finalQuantity ?? item.currentQuantity),
+              ).join("")}
+            </tbody>
+          </table>
+          <button class="secondary" data-print="true" style="margin-top:0.75rem">Print baker sheet</button>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderProductionWorkspace() {
+  const rows = computeProductionRows(state.productionDraft.data);
+  const finality = canFinalizeProductionPlan({
+    products: rows.map((r) => ({ id: r.item.itemKey, suggestion: r.suggestion, reviewAction: r.reviewAction })),
+  });
+
+  return `
+    <button class="back-link" id="back-to-overview-from-production">${icon.back} Overview</button>
+    <div class="workspace-header">
+      <div>
+        <p class="eyebrow">Production</p>
+        <h1 class="page-title" style="margin-bottom:0">Tomorrow's Production</h1>
+      </div>
+      <div class="autosave"><span class="dot"></span>${state.productionSaveState === "saving" ? "Saving…" : "Autosaved"}</div>
+    </div>
+
+    <div class="tabs">
+      <button data-production-tab="current" class="${state.productionWorkspaceTab === "current" ? "active" : ""}">Current</button>
+      <button data-production-tab="history" class="${state.productionWorkspaceTab === "history" ? "active" : ""}">History</button>
+    </div>
+
+    ${
+      state.productionWorkspaceTab === "current"
+        ? `
+          ${renderProductionStatBar(rows, finality)}
+          <div class="list-layout">
+            ${renderProductionList(rows)}
+            ${renderProductionEvidence(rows)}
+          </div>
+          ${renderReserveCheck(rows)}
+          ${renderProductionFinalizeBar(finality)}
+        `
+        : renderProductionHistory()
+    }
+  `;
+}
+
 function render() {
   renderSidenav();
-  document.querySelector("#app").innerHTML = state.view === "overview" ? renderOverview() : renderWorkspace();
+  const app = document.querySelector("#app");
+  if (state.view === "overview") app.innerHTML = renderOverview();
+  else if (state.view === "workspace") app.innerHTML = renderWorkspace();
+  else if (state.view === "production") app.innerHTML = renderProductionWorkspace();
 }
 
 function bindEvents() {
@@ -557,6 +911,7 @@ function bindEvents() {
     if (nav && !nav.disabled) {
       if (nav.dataset.nav === "overview") state.view = "overview";
       if (nav.dataset.nav === "restock") state.view = "workspace";
+      if (nav.dataset.nav === "production") state.view = "production";
       render();
       return;
     }
@@ -564,6 +919,72 @@ function bindEvents() {
     if (event.target.closest("#open-workspace") || event.target.closest("#back-to-overview")) {
       state.view = event.target.closest("#open-workspace") ? "workspace" : "overview";
       render();
+      return;
+    }
+    if (event.target.closest("#open-production") || event.target.closest("#back-to-overview-from-production")) {
+      state.view = event.target.closest("#open-production") ? "production" : "overview";
+      render();
+      return;
+    }
+    if (event.target.closest("[data-production-tab]")) {
+      state.productionWorkspaceTab = event.target.closest("[data-production-tab]").dataset.productionTab;
+      if (state.productionWorkspaceTab === "history") await loadProductionHistory();
+      render();
+      return;
+    }
+    if (event.target.closest("[data-select-product]")) {
+      state.productionSelectedItemKey = event.target.closest("[data-select-product]").dataset.selectProduct;
+      render();
+      return;
+    }
+    const decideButton = event.target.closest("[data-decide]");
+    if (decideButton) {
+      const itemKey = decideButton.dataset.decide;
+      const action = decideButton.dataset.action;
+      const row = computeProductionRows(state.productionDraft.data).find((r) => r.item.itemKey === itemKey);
+      let customQuantity;
+      if (action === "custom") {
+        const input = document.querySelector(`[data-custom-input="${itemKey}"]`);
+        if (!input.value) {
+          input.focus();
+          return;
+        }
+        customQuantity = Number(input.value);
+      }
+      const decision = resolveManagerDecision({
+        suggestion: row.suggestion,
+        currentQuantity: row.item.currentQuantity,
+        action,
+        customQuantity,
+      });
+      await saveProductionDraft({ decisions: { [itemKey]: decision } });
+      return;
+    }
+    if (event.target.closest("[data-change-decision]")) {
+      await clearProductionDecision(event.target.closest("[data-change-decision]").dataset.changeDecision);
+      return;
+    }
+    if (event.target.id === "finalizeProduction") {
+      state.productionFinalizeDialogOpen = true;
+      render();
+      return;
+    }
+    if (event.target.id === "cancelProductionFinalize") {
+      state.productionFinalizeDialogOpen = false;
+      render();
+      return;
+    }
+    if (event.target.id === "confirmProductionFinalize") {
+      const input = document.querySelector("#productionManagerInitials");
+      if (!input.value.trim()) {
+        input.focus();
+        return;
+      }
+      await finalizeProductionDraft(input.value.trim());
+      return;
+    }
+    if (event.target.closest("[data-print]")) {
+      window.print();
       return;
     }
     if (event.target.closest("[data-tab]")) {
@@ -625,11 +1046,18 @@ function bindEvents() {
     if (id === "managerBoxes") {
       await saveDraft({ managerBoxes: Number(event.target.value) });
     }
+
+    const reserveInput = event.target.closest("[data-reserve-input]");
+    if (reserveInput) {
+      const itemKey = reserveInput.dataset.reserveInput;
+      await saveProductionDraft({ reserveEntries: { [itemKey]: Number(reserveInput.value) } });
+    }
   });
 }
 
 async function init() {
   await loadActiveDraft();
+  await loadActiveProductionDraft();
   render();
   bindEvents();
 }

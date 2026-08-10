@@ -383,6 +383,11 @@ th {
 }
 td { text-align: left; padding: 0.9rem 0.5rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 tr:hover td { background: var(--line-soft); }
+tr.selected td { background: var(--amber-bg); }
+
+.action-group { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.action-group button.secondary { padding: 0.4rem 0.7rem; font-size: 0.82rem; }
+.action-group input { padding: 0.4rem 0.5rem; }
 
 .why-link {
   display: block;
@@ -450,4 +455,13 @@ tr:hover td { background: var(--line-soft); }
   border-radius: 10px;
   padding: 0.8rem;
   margin-top: 0.75rem;
+}
+
+@media print {
+  .sidebar, .back-link, .tabs, .autosave, .meta-line, .stat-bar, .finalize-bar, button.secondary[data-print] {
+    display: none !important;
+  }
+  .shell { display: block; }
+  main#app { padding: 0; max-width: none; }
+  .card { box-shadow: none; border: 1px solid #000; }
 }

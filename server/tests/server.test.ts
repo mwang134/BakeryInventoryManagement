@@ -55,3 +55,27 @@ test("POST /draft/:id/finalize moves the draft into History and never sends a su
     assert.equal(history[0].id, finalized.id);
   });
 });
+
+test("/production/draft is a completely independent draft from /draft", async () => {
+  await withServer(async (baseUrl) => {
+    await fetch(`${baseUrl}/draft`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ countFullBoxes: 5 }),
+    });
+    await fetch(`${baseUrl}/production/draft`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reviewedProductIds: ["croissant"] }),
+    });
+
+    const orderDraft = await fetch(`${baseUrl}/draft`).then((r) => r.json());
+    const productionDraft = await fetch(`${baseUrl}/production/draft`).then((r) => r.json());
+
+    assert.deepEqual(orderDraft.data, { countFullBoxes: 5 });
+    assert.deepEqual(productionDraft.data, { reviewedProductIds: ["croissant"] });
+
+    const productionHistory = await fetch(`${baseUrl}/production/history`).then((r) => r.json());
+    assert.deepEqual(productionHistory, []);
+  });
+});
