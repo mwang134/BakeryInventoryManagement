@@ -45,12 +45,19 @@ export function calculateWasteFlag({
   const history = withLeftover.slice(0, -1);
   const baselineLeftoverRate = history.reduce((sum, day) => sum + day.leftoverRate, 0) / history.length;
 
-  const percentAboveBaseline =
+  const rawPercentAboveBaseline =
     baselineLeftoverRate === 0
       ? mostRecent.leftoverRate > 0
         ? Infinity
         : 0
       : (mostRecent.leftoverRate - baselineLeftoverRate) / baselineLeftoverRate;
+
+  // Floating-point division can land a hair above or below an exact
+  // boundary (e.g. 1.5 computed as 0.5000000000000001) - round to 6 decimal
+  // places before comparing so an exact-threshold case is never flipped by
+  // rounding noise instead of the actual data.
+  const percentAboveBaseline =
+    rawPercentAboveBaseline === Infinity ? Infinity : Math.round(rawPercentAboveBaseline * 1e6) / 1e6;
 
   const isUnusuallyHigh = percentAboveBaseline > UNUSUALLY_HIGH_THRESHOLD;
   const hasRecordedReason = Boolean(mostRecent.sellout || mostRecent.unusualContext);

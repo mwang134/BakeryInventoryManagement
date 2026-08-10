@@ -11,6 +11,7 @@ import {
   calculateCapacityStatus,
   estimateCapacityFromCurrentCount,
 } from "/lib/next-order-list.js";
+import { calculateWasteFlag } from "/lib/waste-review.js";
 import {
   calculateProductionSuggestion,
   needsReview,
@@ -201,6 +202,19 @@ function computeProductionRows(data) {
   });
 }
 
+// Waste Pattern Review is a read-only diagnostic view over the same shared
+// product/comparable-day data - no draft, no persistence, no finalize
+// action, per the frozen design decision.
+function computeWasteRows() {
+  return TOMORROWS_PRODUCTION_ITEMS.map((item) => ({
+    item,
+    waste: calculateWasteFlag({
+      producedQuantity: item.currentQuantity,
+      comparableDays: item.comparableDays,
+    }),
+  }));
+}
+
 const state = {
   view: "overview",
   workspaceTab: "current",
@@ -218,6 +232,8 @@ const state = {
   productionSaveState: "idle",
   productionDraft: null,
   productionHistory: [],
+
+  wasteSelectedItemKey: TOMORROWS_PRODUCTION_ITEMS[0].itemKey,
 };
 
 async function loadActiveDraft() {
@@ -333,7 +349,7 @@ function renderSidenav() {
   const items = [
     { id: "overview", label: "Overview", icon: icon.overview, enabled: true },
     { id: "restock", label: "Next Order List", icon: icon.restock, enabled: true },
-    { id: "waste", label: "Waste review", icon: icon.waste, enabled: false, flag: icon.camera },
+    { id: "waste", label: "Waste review", icon: icon.waste, enabled: true, flag: icon.camera },
     { id: "production", label: "Production plan", icon: icon.production, enabled: true },
   ];
 
@@ -342,6 +358,7 @@ function renderSidenav() {
       const active =
         (item.id === "overview" && state.view === "overview") ||
         (item.id === "restock" && state.view === "workspace") ||
+        (item.id === "waste" && state.view === "waste") ||
         (item.id === "production" && state.view === "production");
       return `
         <button class="nav-item ${active ? "active" : ""} ${item.enabled ? "" : "disabled"}"
@@ -384,6 +401,13 @@ function renderOverview() {
       ? "No products need review right now"
       : `${productionFlaggedCount} product${productionFlaggedCount === 1 ? "" : "s"} need review`;
 
+  const wasteRows = computeWasteRows();
+  const wasteFlaggedCount = wasteRows.filter((r) => r.waste.isUnusuallyHigh).length;
+  const wasteDetail =
+    wasteFlaggedCount === 0
+      ? "No unusually high leftover patterns"
+      : `${wasteFlaggedCount} pastr${wasteFlaggedCount === 1 ? "y" : "ies"} with unusually high leftovers`;
+
   return `
     <p class="eyebrow">Overview</p>
     <h1 class="page-title">${greeting}, Manager</h1>
@@ -410,14 +434,14 @@ function renderOverview() {
       <div class="kpi-meta">${productionReviewedCount} of ${productionFlaggedCount} flagged products reviewed${productionLastEdited ? ` · Last edited ${productionLastEdited}` : ""}</div>
     </button>
 
-    <h2 class="section-title">Plan next</h2>
-    <div class="plan-next-grid">
-      <div class="ghost-card">
-        <div class="soon">Coming soon</div>
-        <b>Waste review</b>
-        <p>Comparable-day leftover patterns and supplier waste cost. ${icon.camera} Leftover photo capture is planned here.</p>
+    <button class="kpi-card" id="open-waste" style="margin-top:1rem">
+      <div class="kpi-top">
+        <span class="badge ${wasteFlaggedCount > 0 ? "warning" : "ok"}">${wasteFlaggedCount > 0 ? `${wasteFlaggedCount} flagged` : "All clear"}</span>
       </div>
-    </div>
+      <div class="kpi-title">Waste Pattern Review</div>
+      <div class="kpi-detail">${wasteDetail}</div>
+      <div class="kpi-meta">Comparable-day leftover evidence · SIMULATED data</div>
+    </button>
   `;
 }
 
@@ -926,12 +950,109 @@ function renderProductionWorkspace() {
   `;
 }
 
+// ---------- Waste Pattern Review workspace (read-only diagnostic) ----------
+
+function wasteOutcomeBadge(waste) {
+  if (waste.status === "Building comparable-day baseline") return `<span class="badge muted">Building comparable-day baseline</span>`;
+  if (waste.outcome === "Known one-time event") return `<span class="badge warning">Known one-time event</span>`;
+  if (waste.outcome === "Possible repeated baseline problem") return `<span class="badge danger">Possible repeated baseline problem</span>`;
+  return `<span class="badge ok">Normal range</span>`;
+}
+
+function renderWasteList(rows) {
+  const ranked = [...rows].sort((a, b) => {
+    if (a.waste.isUnusuallyHigh !== b.waste.isUnusuallyHigh) return a.waste.isUnusuallyHigh ? -1 : 1;
+    return (b.waste.percentAboveBaseline ?? -1) - (a.waste.percentAboveBaseline ?? -1);
+  });
+
+  return `
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Product</th><th>Most recent leftover</th><th>vs. baseline</th><th>Outcome</th><th>Supplier cost</th></tr>
+        </thead>
+        <tbody>
+          ${ranked
+            .map(
+              (row) => `
+                <tr class="${row.item.itemKey === state.wasteSelectedItemKey ? "selected" : ""}">
+                  <td><button class="text-link" data-select-waste="${row.item.itemKey}">${row.item.displayName}</button></td>
+                  <td>${row.waste.mostRecentLeftover ?? "—"}</td>
+                  <td>${row.waste.percentAboveBaseline === null ? "—" : `${row.waste.percentAboveBaseline === Infinity ? ">1000" : Math.round(row.waste.percentAboveBaseline * 100)}%`}</td>
+                  <td>${wasteOutcomeBadge(row.waste)}</td>
+                  <td class="cost-note">Not available</td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderWasteEvidence(rows) {
+  const row = rows.find((r) => r.item.itemKey === state.wasteSelectedItemKey) ?? rows[0];
+  const produced = row.item.currentQuantity;
+  const max = Math.max(produced, 1);
+
+  return `
+    <div class="card">
+      <h3 style="margin-top:0">${row.item.displayName} — leftover evidence</h3>
+      <p class="reason">SIMULATED evidence, not real sales data — see data/tomorrows-production-SIMULATED-comparable-day-sales.md.</p>
+      <div class="bars">
+        ${row.item.comparableDays
+          .map((day) => {
+            const leftover = Math.max(0, produced - day.sold);
+            const height = Math.max(4, Math.round((leftover / max) * 130));
+            return `
+              <div class="bar-col">
+                <div class="bar-value">${leftover}</div>
+                <div class="bar" style="height:${height}px"></div>
+                <div class="bar-label">${day.date.slice(5)}${day.sellout ? " ⚑" : ""}</div>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+      <p class="reason">Produced ${produced}/day. ${row.waste.reason}</p>
+      ${wasteOutcomeBadge(row.waste)}
+    </div>
+  `;
+}
+
+function renderWasteWorkspace() {
+  const rows = computeWasteRows();
+  const flaggedCount = rows.filter((r) => r.waste.isUnusuallyHigh).length;
+
+  return `
+    <button class="back-link" id="back-to-overview-from-waste">${icon.back} Overview</button>
+    <div class="workspace-header">
+      <div>
+        <p class="eyebrow">Waste</p>
+        <h1 class="page-title" style="margin-bottom:0">Waste Pattern Review</h1>
+      </div>
+    </div>
+    <p class="page-subtitle">Diagnostic only — production changes happen in Tomorrow's Production. ${icon.camera} Leftover photo capture is planned as a future input method here.</p>
+
+    <div class="stat-bar">
+      <div class="stat"><b>${flaggedCount}</b><span>Unusually high</span></div>
+      <div class="stat"><b>${rows.length}</b><span>Products tracked</span></div>
+      <div class="stat"><b class="cost-note">Not available</b><span>Total supplier waste cost</span></div>
+    </div>
+
+    ${renderWasteList(rows)}
+    ${renderWasteEvidence(rows)}
+  `;
+}
+
 function render() {
   renderSidenav();
   const app = document.querySelector("#app");
   if (state.view === "overview") app.innerHTML = renderOverview();
   else if (state.view === "workspace") app.innerHTML = renderWorkspace();
   else if (state.view === "production") app.innerHTML = renderProductionWorkspace();
+  else if (state.view === "waste") app.innerHTML = renderWasteWorkspace();
 }
 
 function bindEvents() {
@@ -941,6 +1062,7 @@ function bindEvents() {
       if (nav.dataset.nav === "overview") state.view = "overview";
       if (nav.dataset.nav === "restock") state.view = "workspace";
       if (nav.dataset.nav === "production") state.view = "production";
+      if (nav.dataset.nav === "waste") state.view = "waste";
       render();
       return;
     }
@@ -952,6 +1074,16 @@ function bindEvents() {
     }
     if (event.target.closest("#open-production") || event.target.closest("#back-to-overview-from-production")) {
       state.view = event.target.closest("#open-production") ? "production" : "overview";
+      render();
+      return;
+    }
+    if (event.target.closest("#open-waste") || event.target.closest("#back-to-overview-from-waste")) {
+      state.view = event.target.closest("#open-waste") ? "waste" : "overview";
+      render();
+      return;
+    }
+    if (event.target.closest("[data-select-waste]")) {
+      state.wasteSelectedItemKey = event.target.closest("[data-select-waste]").dataset.selectWaste;
       render();
       return;
     }
