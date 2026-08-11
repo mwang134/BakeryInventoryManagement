@@ -493,7 +493,14 @@ tr.clickable-row { cursor: pointer; }
    end stock can go negative), so .bar-track is a relative-positioned
    column that both the bar and its value label sit inside via `top`. */
 
-.chart-plot { position: relative; padding: 0.75rem 0.5rem 0 3rem; margin-bottom: 1.75rem; }
+/* No padding-top here on purpose: an absolutely-positioned child's `top`
+   is measured from the padding-box edge (ignoring padding-top), while a
+   normal-flow child (.bars) would be pushed down BY padding-top - two
+   different origins for elements that need to share one. Headroom for the
+   topmost value label is baked into the JS-computed `top` values instead
+   (CHART_HEADROOM in app.js), so every element uses the same coordinate
+   space. */
+.chart-plot { position: relative; padding: 0 0.5rem 0 3rem; margin-bottom: 1.75rem; }
 
 .chart-gridline { position: absolute; left: 3rem; right: 0.5rem; border-top: 1px dashed var(--line-soft); }
 

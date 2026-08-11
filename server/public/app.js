@@ -744,12 +744,22 @@ function niceTickStep(rawStep) {
   return niceResidual * magnitude;
 }
 
+// HEADROOM reserves room above the tallest bar for its value label. It's
+// baked into every element's "top" here (gridlines, axis, reference line,
+// AND bars) rather than left to .chart-plot's CSS padding-top, because
+// absolutely-positioned children measure `top` from the padding *box*
+// edge (ignoring padding-top) while .bars, a normal-flow child, would be
+// pushed down BY padding-top - two different origins for the same chart,
+// which is what put the axis line ~12px above where the bars actually
+// ended. One shared coordinate space, computed once here, avoids that.
+const CHART_HEADROOM = 24;
+
 function renderBarChart(items, { plotHeight = 150, referenceValue = null, referenceLabel = "" } = {}) {
   const values = items.map((item) => item.value);
   const minValue = Math.min(0, ...values);
   const maxValue = Math.max(1, ...values, referenceValue ?? 0);
   const range = maxValue - minValue || 1;
-  const zeroTop = (maxValue / range) * plotHeight;
+  const zeroTop = CHART_HEADROOM + (maxValue / range) * plotHeight;
 
   // Round-number tick step (1/2/5/10/20/50...) rather than dividing the
   // range into evenly-spaced fractions - avoids duplicate rounded labels
@@ -761,7 +771,7 @@ function renderBarChart(items, { plotHeight = 150, referenceValue = null, refere
   }
   const gridlines = tickValues
     .map((tickValue) => {
-      const top = ((maxValue - tickValue) / range) * plotHeight;
+      const top = CHART_HEADROOM + ((maxValue - tickValue) / range) * plotHeight;
       return `<div class="chart-gridline" style="top:${top}px"><span class="chart-tick-label">${tickValue}</span></div>`;
     })
     .join("");
@@ -781,7 +791,7 @@ function renderBarChart(items, { plotHeight = 150, referenceValue = null, refere
       const variantClass = item.value < 0 ? " bar-negative" : item.flagged ? " bar-flagged" : "";
       return `
         <div class="bar-col">
-          <div class="bar-track" style="height:${plotHeight}px">
+          <div class="bar-track" style="height:${plotHeight + CHART_HEADROOM}px">
             <div class="bar-value" style="top:${valueTop}px">${item.value}${item.suffix ?? ""}</div>
             <div class="bar${variantClass}" style="top:${barTop}px; height:${barPx}px"></div>
           </div>
@@ -792,7 +802,7 @@ function renderBarChart(items, { plotHeight = 150, referenceValue = null, refere
     .join("");
 
   return `
-    <div class="chart-plot" style="height:${plotHeight}px">
+    <div class="chart-plot">
       ${gridlines}
       ${referenceHtml}
       <div class="chart-x-axis" style="top:${zeroTop}px"></div>
