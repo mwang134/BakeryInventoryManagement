@@ -483,29 +483,72 @@ tr.clickable-row { cursor: pointer; }
 }
 
 /* ---------- Chart ----------
-   Each column is a fixed-row grid (value / bar-track / label) instead of a
-   plain bottom-aligned flex box. That's what actually keeps every bar
-   sitting on the same baseline and every label starting at the same top
-   edge, regardless of whether a label is one line ("Arriving") or wraps to
-   two ("Post-arrival usage") - a flex box bottom-aligned as a whole would
-   let a taller wrapped label push its bar higher than its neighbors. */
+   A real plotted chart, not just a row of bars: .chart-plot is the
+   positioned coordinate space (JS supplies inline `top`/`height` px values
+   computed from the data's own min/max), with dashed gridlines + rounded
+   tick labels in a reserved left gutter, a solid zero/x-axis line, and an
+   optional dashed KPI reference line (current production quantity, or a
+   comparable-day leftover baseline). Bars grow up from zero for positive
+   values and down from zero for negative ones (Next Order List's projected
+   end stock can go negative), so .bar-track is a relative-positioned
+   column that both the bar and its value label sit inside via `top`. */
 
-.bars { display: flex; align-items: flex-start; gap: 1.5rem; padding: 1.25rem 0.5rem 0; }
+.chart-plot { position: relative; padding: 0.75rem 0.5rem 0 3rem; margin-bottom: 1.75rem; }
 
-.bar-col {
-  display: grid;
-  grid-template-rows: 1.3rem 150px auto;
-  row-gap: 0.5rem;
-  justify-items: center;
-  width: 5.5rem;
-  text-align: center;
+.chart-gridline { position: absolute; left: 3rem; right: 0.5rem; border-top: 1px dashed var(--line-soft); }
+
+.chart-tick-label {
+  position: absolute;
+  left: -3rem;
+  top: -0.6rem;
+  width: 2.6rem;
+  text-align: right;
+  font-size: 0.7rem;
+  color: var(--ink-soft);
 }
 
-.bar-value { align-self: end; font-size: 0.85rem; font-weight: 700; font-family: var(--font-display); }
+.chart-x-axis { position: absolute; left: 3rem; right: 0.5rem; border-top: 1.5px solid var(--ink); }
 
-.bar-track { display: flex; align-items: flex-end; justify-content: center; height: 100%; width: 100%; }
+.chart-reference-line { position: absolute; left: 3rem; right: 0.5rem; border-top: 2px dashed var(--terracotta-dark); }
 
-.bar { width: 2.5rem; background: linear-gradient(180deg, var(--gold), var(--terracotta)); border-radius: 6px 6px 2px 2px; }
+.chart-reference-label {
+  position: absolute;
+  right: 0;
+  top: -1.05rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--terracotta-dark);
+  background: var(--cream);
+  padding: 0 0.3rem;
+}
+
+.bars { position: relative; display: flex; align-items: flex-start; gap: 1.5rem; }
+
+.bar-col { display: flex; flex-direction: column; align-items: center; width: 5.5rem; gap: 0.5rem; text-align: center; }
+
+.bar-track { position: relative; width: 100%; }
+
+.bar-value {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.bar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2.5rem;
+  background: linear-gradient(180deg, var(--gold), var(--terracotta));
+  border-radius: 6px 6px 2px 2px;
+}
+
+.bar-negative { background: linear-gradient(180deg, var(--terracotta), var(--brick)); border-radius: 2px 2px 6px 6px; }
+
+.bar-flagged { background: linear-gradient(180deg, var(--brick), var(--terracotta-dark)); }
 
 .bar-label { font-size: 0.75rem; color: var(--ink-soft); line-height: 1.3; }
 

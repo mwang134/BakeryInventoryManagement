@@ -680,13 +680,74 @@ function renderList(data, row) {
   `;
 }
 
-function bar(label, value, max) {
-  const height = max > 0 ? Math.max(4, Math.round((Math.max(value, 0) / max) * 130)) : 4;
+// Shared analytical bar chart: real Y-axis with rounded-number gridlines,
+// an X-axis/zero line, and bars that extend upward for positive values and
+// downward for negative ones (so a real shortage - e.g. negative projected
+// end stock - reads as a bar below the axis, not an invisible sliver).
+// Optionally takes a dashed reference line tied to the chart's own KPI
+// logic (e.g. current production quantity, or a comparable-day baseline),
+// not just decoration.
+function niceTickStep(rawStep) {
+  if (rawStep <= 0) return 1;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const residual = rawStep / magnitude;
+  const niceResidual = residual <= 1 ? 1 : residual <= 2 ? 2 : residual <= 5 ? 5 : 10;
+  return niceResidual * magnitude;
+}
+
+function renderBarChart(items, { plotHeight = 150, referenceValue = null, referenceLabel = "" } = {}) {
+  const values = items.map((item) => item.value);
+  const minValue = Math.min(0, ...values);
+  const maxValue = Math.max(1, ...values, referenceValue ?? 0);
+  const range = maxValue - minValue || 1;
+  const zeroTop = (maxValue / range) * plotHeight;
+
+  // Round-number tick step (1/2/5/10/20/50...) rather than dividing the
+  // range into evenly-spaced fractions - avoids duplicate rounded labels
+  // ("2", "2") on charts with a small value range.
+  const step = niceTickStep(range / 4);
+  const tickValues = [];
+  for (let t = Math.ceil(minValue / step) * step; t <= maxValue + 1e-9; t += step) {
+    tickValues.push(Math.round(t));
+  }
+  const gridlines = tickValues
+    .map((tickValue) => {
+      const top = ((maxValue - tickValue) / range) * plotHeight;
+      return `<div class="chart-gridline" style="top:${top}px"><span class="chart-tick-label">${tickValue}</span></div>`;
+    })
+    .join("");
+
+  const referenceHtml =
+    referenceValue !== null
+      ? `<div class="chart-reference-line" style="top:${zeroTop - (referenceValue / range) * plotHeight}px">${
+          referenceLabel ? `<span class="chart-reference-label">${referenceLabel}</span>` : ""
+        }</div>`
+      : "";
+
+  const bars = items
+    .map((item) => {
+      const barPx = Math.max(2, (Math.abs(item.value) / range) * plotHeight);
+      const barTop = item.value >= 0 ? zeroTop - barPx : zeroTop;
+      const valueTop = item.value >= 0 ? barTop - 22 : barTop + barPx + 4;
+      const variantClass = item.value < 0 ? " bar-negative" : item.flagged ? " bar-flagged" : "";
+      return `
+        <div class="bar-col">
+          <div class="bar-track" style="height:${plotHeight}px">
+            <div class="bar-value" style="top:${valueTop}px">${item.value}${item.suffix ?? ""}</div>
+            <div class="bar${variantClass}" style="top:${barTop}px; height:${barPx}px"></div>
+          </div>
+          <div class="bar-label">${item.label}</div>
+        </div>
+      `;
+    })
+    .join("");
+
   return `
-    <div class="bar-col">
-      <div class="bar-value">${value}</div>
-      <div class="bar-track"><div class="bar" style="height:${height}px"></div></div>
-      <div class="bar-label">${label}</div>
+    <div class="chart-plot" style="height:${plotHeight}px">
+      ${gridlines}
+      ${referenceHtml}
+      <div class="chart-x-axis" style="top:${zeroTop}px"></div>
+      <div class="bars">${bars}</div>
     </div>
   `;
 }
@@ -696,23 +757,16 @@ function renderChart(row) {
     return `<div class="card">Enter the count and dates to see the chart.</div>`;
   }
   const arrivingPieces = row.managerBoxes * CROISSANT_DOUGH.piecesPerBox;
-  const max = Math.max(
-    row.onHandPieces,
-    row.preArrivalUsagePieces,
-    row.postArrivalUsagePieces,
-    arrivingPieces,
-    Math.abs(row.projectedEndStock),
-  );
   return `
     <div class="card">
-      <div class="bars">
-        ${bar("On hand", row.onHandPieces, max)}
-        ${bar("Pre-arrival usage", row.preArrivalUsagePieces, max)}
-        ${bar("At arrival", row.preArrival.projectedStockAtArrival, max)}
-        ${bar("Post-arrival usage", row.postArrivalUsagePieces, max)}
-        ${bar("Arriving", arrivingPieces, max)}
-        ${bar("End stock", row.projectedEndStock, max)}
-      </div>
+      ${renderBarChart([
+        { label: "On hand", value: row.onHandPieces },
+        { label: "Pre-arrival usage", value: row.preArrivalUsagePieces },
+        { label: "At arrival", value: row.preArrival.projectedStockAtArrival },
+        { label: "Post-arrival usage", value: row.postArrivalUsagePieces },
+        { label: "Arriving", value: arrivingPieces },
+        { label: "End stock", value: row.projectedEndStock },
+      ])}
     </div>
   `;
 }
@@ -895,26 +949,20 @@ function renderProductionList(rows) {
 
 function renderProductionEvidence(rows) {
   const row = rows.find((r) => r.item.itemKey === state.productionSelectedItemKey) ?? rows[0];
-  const max = Math.max(...row.item.comparableDays.map((d) => d.sold), row.item.currentQuantity, 1);
 
   return `
     <div class="card side-panel">
       <h3>${row.item.displayName} — comparable Tuesdays</h3>
       <p class="reason">SIMULATED evidence, not real sales data — see data/tomorrows-production-SIMULATED-comparable-day-sales.md.</p>
-      <div class="bars">
-        ${row.item.comparableDays
-          .map((day) => {
-            const height = Math.max(4, Math.round((day.sold / max) * 130));
-            return `
-              <div class="bar-col">
-                <div class="bar-value">${day.sold}${day.sellout ? " ⚑" : ""}</div>
-                <div class="bar-track"><div class="bar" style="height:${height}px; ${day.sellout ? "background:linear-gradient(180deg,var(--brick),var(--terracotta-dark))" : ""}"></div></div>
-                <div class="bar-label">${day.date.slice(5)}</div>
-              </div>
-            `;
-          })
-          .join("")}
-      </div>
+      ${renderBarChart(
+        row.item.comparableDays.map((day) => ({
+          label: day.date.slice(5),
+          value: day.sold,
+          suffix: day.sellout ? " ⚑" : "",
+          flagged: day.sellout,
+        })),
+        { referenceValue: row.item.currentQuantity, referenceLabel: `Today's plan: ${row.item.currentQuantity}` },
+      )}
       <p class="reason">Suggested: ${row.suggestion.suggestedQuantity ?? "n/a"} — ${row.suggestion.reason}</p>
       ${row.suggestion.unusualContextNotes.length ? `<p class="caveat">${row.suggestion.unusualContextNotes.join("; ")}</p>` : ""}
     </div>
@@ -1106,27 +1154,23 @@ function renderWasteList(rows) {
 function renderWasteEvidence(rows) {
   const row = rows.find((r) => r.item.itemKey === state.wasteSelectedItemKey) ?? rows[0];
   const produced = row.item.currentQuantity;
-  const max = Math.max(produced, 1);
+  const baselineLeftover =
+    row.waste.baselineLeftoverRate !== null ? Math.round(row.waste.baselineLeftoverRate * produced) : null;
 
   return `
     <div class="card">
       <h3 style="margin-top:0">${row.item.displayName} — leftover evidence</h3>
       <p class="reason">SIMULATED evidence, not real sales data — see data/tomorrows-production-SIMULATED-comparable-day-sales.md.</p>
-      <div class="bars">
-        ${row.item.comparableDays
-          .map((day) => {
-            const leftover = Math.max(0, produced - day.sold);
-            const height = Math.max(4, Math.round((leftover / max) * 130));
-            return `
-              <div class="bar-col">
-                <div class="bar-value">${leftover}</div>
-                <div class="bar-track"><div class="bar" style="height:${height}px"></div></div>
-                <div class="bar-label">${day.date.slice(5)}${day.sellout ? " ⚑" : ""}</div>
-              </div>
-            `;
-          })
-          .join("")}
-      </div>
+      ${renderBarChart(
+        row.item.comparableDays.map((day) => ({
+          label: `${day.date.slice(5)}${day.sellout ? " ⚑" : ""}`,
+          value: Math.max(0, produced - day.sold),
+          flagged: row.waste.isUnusuallyHigh && day === row.item.comparableDays[row.item.comparableDays.length - 1],
+        })),
+        baselineLeftover !== null
+          ? { referenceValue: baselineLeftover, referenceLabel: `Baseline: ${baselineLeftover}` }
+          : {},
+      )}
       <p class="reason">Produced ${produced}/day. ${row.waste.reason}</p>
       ${wasteOutcomeBadge(row.waste)}
     </div>
