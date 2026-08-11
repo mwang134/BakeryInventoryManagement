@@ -482,13 +482,32 @@ tr.clickable-row { cursor: pointer; }
   color: var(--cream);
 }
 
-/* ---------- Chart ---------- */
+/* ---------- Chart ----------
+   Each column is a fixed-row grid (value / bar-track / label) instead of a
+   plain bottom-aligned flex box. That's what actually keeps every bar
+   sitting on the same baseline and every label starting at the same top
+   edge, regardless of whether a label is one line ("Arriving") or wraps to
+   two ("Post-arrival usage") - a flex box bottom-aligned as a whole would
+   let a taller wrapped label push its bar higher than its neighbors. */
 
-.bars { display: flex; align-items: flex-end; gap: 1.75rem; height: 200px; padding: 1.25rem 0.5rem 0; }
-.bar-col { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; width: 5.5rem; }
+.bars { display: flex; align-items: flex-start; gap: 1.5rem; padding: 1.25rem 0.5rem 0; }
+
+.bar-col {
+  display: grid;
+  grid-template-rows: 1.3rem 150px auto;
+  row-gap: 0.5rem;
+  justify-items: center;
+  width: 5.5rem;
+  text-align: center;
+}
+
+.bar-value { align-self: end; font-size: 0.85rem; font-weight: 700; font-family: var(--font-display); }
+
+.bar-track { display: flex; align-items: flex-end; justify-content: center; height: 100%; width: 100%; }
+
 .bar { width: 2.5rem; background: linear-gradient(180deg, var(--gold), var(--terracotta)); border-radius: 6px 6px 2px 2px; }
-.bar-label { font-size: 0.75rem; color: var(--ink-soft); text-align: center; }
-.bar-value { font-size: 0.85rem; font-weight: 700; font-family: var(--font-display); }
+
+.bar-label { font-size: 0.75rem; color: var(--ink-soft); line-height: 1.3; }
 
 /* ---------- History ---------- */
 

@@ -681,11 +681,11 @@ function renderList(data, row) {
 }
 
 function bar(label, value, max) {
-  const height = max > 0 ? Math.max(4, Math.round((Math.max(value, 0) / max) * 150)) : 4;
+  const height = max > 0 ? Math.max(4, Math.round((Math.max(value, 0) / max) * 130)) : 4;
   return `
     <div class="bar-col">
       <div class="bar-value">${value}</div>
-      <div class="bar" style="height:${height}px"></div>
+      <div class="bar-track"><div class="bar" style="height:${height}px"></div></div>
       <div class="bar-label">${label}</div>
     </div>
   `;
@@ -908,7 +908,7 @@ function renderProductionEvidence(rows) {
             return `
               <div class="bar-col">
                 <div class="bar-value">${day.sold}${day.sellout ? " ⚑" : ""}</div>
-                <div class="bar" style="height:${height}px; ${day.sellout ? "background:linear-gradient(180deg,var(--brick),var(--terracotta-dark))" : ""}"></div>
+                <div class="bar-track"><div class="bar" style="height:${height}px; ${day.sellout ? "background:linear-gradient(180deg,var(--brick),var(--terracotta-dark))" : ""}"></div></div>
                 <div class="bar-label">${day.date.slice(5)}</div>
               </div>
             `;
@@ -1120,7 +1120,7 @@ function renderWasteEvidence(rows) {
             return `
               <div class="bar-col">
                 <div class="bar-value">${leftover}</div>
-                <div class="bar" style="height:${height}px"></div>
+                <div class="bar-track"><div class="bar" style="height:${height}px"></div></div>
                 <div class="bar-label">${day.date.slice(5)}${day.sellout ? " ⚑" : ""}</div>
               </div>
             `;
