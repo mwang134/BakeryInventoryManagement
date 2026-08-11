@@ -712,7 +712,7 @@ function renderCountSection(data, row) {
           <input type="number" min="0" step="1" id="countFullBoxes" value="${data.countFullBoxes ?? ""}" />
         </label>
         <label>Partial pieces
-          <input type="number" min="0" step="1" id="countPartialPieces" value="${data.countPartialPieces ?? ""}" />
+          <input type="number" min="0" step="1" max="${CROISSANT_DOUGH.piecesPerBox - 1}" id="countPartialPieces" value="${data.countPartialPieces ?? ""}" />
         </label>
         <label>Count date
           <input type="date" id="countDate" value="${data.countDate ?? ""}" />
@@ -730,6 +730,7 @@ function renderCountSection(data, row) {
         </label>
         ${hasCount ? `<button class="secondary" id="done-editing-count">Done</button>` : ""}
       </div>
+      <p class="reason">Partial pieces: count individual pieces in the open box - if it's a full box's worth, count it as another full box instead.</p>
       <p class="reason">Box size (192 pieces) is an unverified estimate. Supplier minimum is unknown.</p>
       <p class="reason">Freezer capacity is also estimated — from today's count rounded up, plus one box of headroom — not a real measured zone size.</p>
     </div>
@@ -1142,12 +1143,27 @@ function renderReserveCheck(rows) {
 function renderProductionStatBar(rows, finality) {
   const flaggedCount = rows.filter((r) => r.flagged).length;
   const reviewedCount = rows.filter((r) => r.flagged && r.reviewAction).length;
+  // Bulk-acceptable = still needs a decision, and has a real suggestion to
+  // accept (Limited evidence has no suggestedQuantity - those always need
+  // an individual Keep current/Set decision, this button can't touch
+  // them). Nothing is skipped by this - it's an explicit, visible action
+  // the manager triggers, and each item still ends up with its own
+  // recorded decision, same as clicking "Use suggestion" on every row by
+  // hand would have produced.
+  const bulkAcceptableCount = rows.filter(
+    (r) => r.flagged && !r.reviewAction && r.suggestion.suggestedQuantity !== null,
+  ).length;
   return `
     <div class="stat-bar">
       <div class="stat"><b>${flaggedCount - reviewedCount}</b><span>Awaiting decision</span></div>
       <div class="stat"><b>${reviewedCount}/${flaggedCount}</b><span>Reviewed</span></div>
       <div class="stat"><b>${rows.length}</b><span>Products tracked</span></div>
       <div class="stat"><b>${finality.canFinalize ? "Ready" : "Blocked"}</b><span>Finalize status</span></div>
+      ${
+        bulkAcceptableCount > 0
+          ? `<button class="secondary" id="useAllSuggestions">Use suggestion for all ${bulkAcceptableCount} remaining</button>`
+          : ""
+      }
     </div>
   `;
 }
@@ -1280,7 +1296,7 @@ function renderWasteList(rows) {
           ${ranked
             .map(
               (row) => `
-                <tr class="clickable-row ${row.item.itemKey === state.wasteSelectedItemKey ? "selected" : ""}" data-select-waste="${row.item.itemKey}">
+                <tr class="clickable-row ${row.item.itemKey === state.wasteSelectedItemKey ? "selected" : ""}" data-select-waste="${row.item.itemKey}" tabindex="0" role="button" aria-pressed="${row.item.itemKey === state.wasteSelectedItemKey}" aria-label="Show leftover evidence for ${row.item.displayName}">
                   <td><span class="text-link" style="pointer-events:none">${row.item.displayName}</span></td>
                   <td>${row.waste.mostRecentLeftover ?? "—"}</td>
                   <td>${row.waste.percentAboveBaseline === null ? "—" : `${row.waste.percentAboveBaseline === Infinity ? ">1000" : Math.round(row.waste.percentAboveBaseline * 100)}%`}</td>
@@ -1364,7 +1380,10 @@ function renderErrorBanner() {
 
 function render() {
   document.querySelector("#shell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
-  document.querySelector("#sidebar-toggle").title = state.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
+  const sidebarToggleLabel = state.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
+  const sidebarToggle = document.querySelector("#sidebar-toggle");
+  sidebarToggle.title = sidebarToggleLabel;
+  sidebarToggle.setAttribute("aria-label", sidebarToggleLabel);
   renderSidenav();
   const app = document.querySelector("#app");
   let content;
@@ -1376,6 +1395,20 @@ function render() {
 }
 
 function bindEvents() {
+  // The waste-review table's rows are the one truly clickable element in
+  // this app that isn't a real <button> (a whole <tr> is the click target,
+  // not just its text) - real buttons get Enter/Space activation for free
+  // from the browser, but a tabindex="0" row does not, so it's added here
+  // explicitly. Dispatching a real click reuses the existing click handler
+  // below instead of duplicating the selection logic.
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target.closest('[role="button"]');
+    if (!target) return;
+    event.preventDefault();
+    target.click();
+  });
+
   document.addEventListener("click", async (event) => {
     if (event.target.closest("#sidebar-toggle")) {
       state.sidebarCollapsed = !state.sidebarCollapsed;
@@ -1428,6 +1461,21 @@ function bindEvents() {
     if (event.target.closest("[data-select-product]")) {
       state.productionSelectedItemKey = event.target.closest("[data-select-product]").dataset.selectProduct;
       render();
+      return;
+    }
+    if (event.target.id === "useAllSuggestions") {
+      const rows = computeProductionRows(state.productionDraft.data);
+      const bulkDecisions = {};
+      for (const row of rows) {
+        if (row.flagged && !row.reviewAction && row.suggestion.suggestedQuantity !== null) {
+          bulkDecisions[row.item.itemKey] = resolveManagerDecision({
+            suggestion: row.suggestion,
+            currentQuantity: row.item.currentQuantity,
+            action: "use-suggestion",
+          });
+        }
+      }
+      await saveProductionDraft({ decisions: bulkDecisions });
       return;
     }
     const decideButton = event.target.closest("[data-decide]");

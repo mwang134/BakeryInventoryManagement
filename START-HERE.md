@@ -2,26 +2,25 @@
 
 Aliases: Baker's Door, CakeStore, Cake Store, BakeryOps Assistant.
 
+## Current state
+
+All three selected KPIs are **built, tested, and verified live**: Next Order List, Tomorrow's Production, and Waste Pattern Review. 119/119 tests passing (75 in `app/`, 44 in `server/`). External code review's P0 (security/validation) and P1 (persistence reliability) findings are addressed; P2 (documentation accuracy, launcher, Node version pin, accessibility) is in progress - see `TODO.md` for exactly what's left.
+
 ## Fresh pickup order
 
-Current active lane: **CONVERGE — Next Order List**, explicitly selected by Matthew.
+1. `README.md` - what's built, where it lives, how to run it
+2. `DECISIONS.md` - every dated decision, most recent at the bottom; this is the current source of truth, not the older `plans/` docs below
+3. `TODO.md` - exactly what's still open
+4. `plans/NEXT-ORDER-LIST-BUILD-GATE.md` and `plans/NEXT-ORDER-LIST-ACCEPTANCE-SCENARIOS.md` - Next Order List's frozen formula contract (still accurate; predates BUILD but was never superseded)
+5. `data/redacted-sku-contracts/croissant-dough.md` - the one real/redacted SKU contract
+6. `server/src/*.ts` and `app/src/*.js` - implementation, after understanding the contracts above
 
-1. `plans/NEXT-ORDER-LIST-BUILD-GATE.md` — current scope and readiness gate
-2. `plans/NEXT-ORDER-LIST-ACCEPTANCE-SCENARIOS.md` — business-readable expected behavior
-3. `data/redacted-sku-contracts/croissant-dough.md` — first current data contract
-4. `NEXT-SESSION.md` — exact pickup question and sequence
-5. `TODO.md` — current work and deferred backlog
-6. `DECISIONS.md` — durable decisions
-7. `ideas/manager-centered-bakery-flow.md` — selected concepts and reasoning
-8. `WHOLE-PICTURE.md` / `CURRENT-DIRECTION.md` — broader context and earlier proposal
-9. `IDEA-LAB.md` / `ideas/README.md` — exploration lane when Matthew introduces a new idea
-
-Do not treat the old prototype's sample data or fixed seven-day logic as current policy. Open older plans/artifacts only as inspiration or history. Matthew still owns direction; new ideas may be explored without being silently added to the selected BUILD scope.
+Do not treat `app/src/app.js`, `dashboard.js`, `reorder.js`, or `sample-data.js` as current - those are the original sample-data prototype, kept for history only. The current app is `server/public/app.js`, which imports its calculation logic from the tested modules in `app/src/` (`next-order-list.js`, `tomorrows-production.js`, `waste-review.js`, `escape-html.js`).
 
 ## Boundary
 
-- Hub = curated project truth, routing, and proof.
-- `app/` = implementation source of truth for the current working prototype.
-- `demos/` and `sketches/` = design history/inspiration, not production behavior.
-- Hermes/Mike = Matthew's coach and build partner, not the store system of record.
-- No real store/POS/supplier action without explicit permission and manager approval.
+- `DECISIONS.md` = curated project truth, most current, dated, append-only.
+- `server/` = current implementation (Express + SQLite + plain-ES-module UI).
+- `app/src/*.js` (excluding `app.js`/`dashboard.js`/`reorder.js`/`sample-data.js`) = tested calculation engines, shared by the server via `/lib/*.js`.
+- `demos/`, `sketches/`, older `plans/*` not named above = design history/inspiration, not current behavior.
+- No real store/POS/supplier action without explicit permission and manager approval. No `git push` without Matthew running it himself.

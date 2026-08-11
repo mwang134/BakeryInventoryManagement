@@ -1,64 +1,38 @@
 ---
 project: bakeryops-assistant
-mode: engineering-convergence
-active_slice: next-order-list
+mode: portfolio-coherence
+active_slice: p2-review-followup
 owner_proposal_advisory: false
 ---
 
 # TODO — BakeryOps Assistant
 
-## Next Order List — active convergence lane
+## All three KPIs: built, tested, verified
 
-Scope:
-- In: one manager-facing frozen-dough Next Order List vertical slice.
-- Deferred: Tomorrow's Production, Waste Pattern Review, live POS integration, supplier submission, and broad Product Setup.
+Next Order List, Tomorrow's Production, and Waste Pattern Review are all implemented test-first, wired into a real SQLite-backed server, and verified live in the browser. 119/119 tests passing. Full history in `DECISIONS.md`.
 
-Why:
-- Matthew selected Next Order List as the flagship portfolio build.
-- Product/design convergence is strong; one redacted data contract and persistence choice remain before BUILD.
+External code review (2026-08-11) findings:
+- **P0 (security/validation)** - done. Server binds to 127.0.0.1, both draft types have server-side schemas with save/finalize validation tiers, supplier-rule acknowledgment is required and stored, the real stored-XSS path (unescaped `managerInitials`) is fixed and tested, CSP + disabled X-Powered-By are in place.
+- **P1 (persistence reliability)** - done. Versioned migrations, a database-level constraint enforcing exactly one active draft, transactional finalize, client-side handling of non-2xx responses (a real error banner instead of silent failure), and a process-lifecycle test that spawns the real server as an OS process.
+- **P2 (portfolio coherence)** - in progress, see below.
 
-References:
-- `plans/NEXT-ORDER-LIST-BUILD-GATE.md`
-- `plans/NEXT-ORDER-LIST-ACCEPTANCE-SCENARIOS.md`
-- `data/redacted-sku-contracts/croissant-dough.md`
+## P2 — remaining
 
-Completed evidence:
-- [x] POS item-level sales capability reported.
-- [x] Manager full/partial freezer-count workflow reported.
-- [x] Whole-card KPI → focused workspace selected.
-- [x] Date-driven pre-arrival/post-arrival formula shape selected.
-- [x] Production-sheet quantities selected as V1 demand baseline.
-- [x] No-hidden-percentage-buffer rule selected.
-- [x] One redacted shared-dough mapping recorded.
-- [x] Generic weekday croissant-dough baseline calculated as 84 pieces.
-- [x] Acceptance scenarios drafted.
-- [x] Current prototype tests pass 8/8.
+- [x] Confirm partial-box counting method with Matthew (exact piece count, not a fraction) - `DECISIONS.md`, 2026-08-11.
+- [x] Confirm Production/Waste stay in portfolio scope - `DECISIONS.md`, 2026-08-11.
+- [x] Update README, START-HERE, NEXT-SESSION, TODO to reflect actual current state.
+- [ ] Provide one verified Mac launcher for the current `server/` app (the existing `app/START-MAC.command` targets the old prototype).
+- [ ] Pin and document the supported Node version.
+- [ ] Keyboard accessibility audit across `server/public/`.
+- [ ] Reduce Tomorrow's Production's per-item review load if a reasonable simplification exists, without silently skipping real flags.
 
-Next tasks — finish before BUILD:
-- [ ] Confirm whether the generic weekday quantities apply identically Monday through Friday.
-- [ ] Add weekend production-sheet quantities or explicit no-production behavior.
-- [ ] Add a redacted physical count and partial pieces.
-- [ ] Add count date, shipment-available date, and plan-stock-through date.
-- [ ] Confirm actual box size or retain 192 as visibly unverified prototype data.
-- [ ] Define behavior when supplier minimum remains unknown.
-- [ ] Freeze stale-count and hard-capacity behavior.
-- [ ] Review and approve acceptance scenarios with Matthew.
-- [ ] Select persistence technology.
+## Deferred - not started, not currently in scope
 
-First BUILD actions after the gate:
-- [ ] Convert approved acceptance scenarios into failing tests.
-- [ ] Implement domain calculation and missing-data states.
-- [ ] Implement one persistent active draft and finalized-only immutable History.
-- [ ] Refactor homepage and focused workspace.
-- [ ] Verify exact portable archive and Mac fallback launch path.
-
-Deferred backlog — do not start in the flagship build:
-- [ ] Tomorrow's Production recommendation and large-change rule.
-- [ ] Waste Pattern Review anomaly rule.
-- [ ] Live POS import/integration.
-- [ ] Supplier ordering or supplier-confirmation state.
-- [ ] Measured impact claims without deployment evidence.
+- [ ] Live POS import/integration (real sales data would replace the SIMULATED comparable-day dataset).
+- [ ] Supplier ordering or supplier-confirmation state (finalization stays internal-only by design).
+- [ ] Broad multi-role accounts, live kitchen alerts, wider Product Setup.
+- [ ] Measured real-world impact claims - would require actual deployment evidence, not simulated data.
 
 ## Exploration boundary
 
-Matthew still owns the broader product direction. New ideas may be explored without being silently added to the active BUILD scope. Capture them under `IDEA-LAB.md` / `ideas/`, then return to the selected slice unless Matthew explicitly changes direction.
+Matthew still owns the broader product direction. New ideas may be explored without being silently added to current scope. Capture them under `IDEA-LAB.md` / `ideas/`, then return here unless Matthew explicitly changes direction.

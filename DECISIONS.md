@@ -272,3 +272,18 @@ Reason:
 - This was the "Feature 2" scoped during Next Order List's original Feature 1/Feature 2 planning discussion, deferred until after Feature 1 (the "what changed" trend comparison) shipped.
 
 Status: implemented and tested (real croissant dough count numbers as the primary test case). Chart panels across all three KPIs were also redesigned this session with a real Y-axis, gridlines, and KPI-tied reference lines, replacing the earlier plain bar rows.
+
+## 2026-08-11 — External code review (P0/P1/P2), and two open questions it surfaced
+
+An external review of the repository (security, persistence integrity, and portfolio coherence) produced a prioritized correction list. P0 (validation, transactional persistence, security headers, stored-XSS fix) and P1 (versioned migrations, single-active-draft DB constraint, transactional finalize, client error handling, process-lifecycle test) are implemented and tested - see commit history for the full breakdown. Two items in the list were genuine open questions, not engineering tasks, and were resolved with Matthew directly rather than guessed:
+
+Decision - partial-box counting method:
+- Confirmed: a partial box is counted as an exact number of individual pieces (e.g. "37 pieces left"), not an eyeballed fraction of a box. This matches what was already implemented (`countPartialPieces`) and the one sample worked example already in `data/redacted-sku-contracts/croissant-dough.md` ("1 partial piece"). Previously this was only ever a working assumption, never an explicitly confirmed decision - `plans/RESUME-QUALITY-PROJECT-PATH.md` and `plans/PLAN-B-CURRENT-MANAGER-PLANNER-MVP.md` both listed "partial-box counting method" as unresolved.
+
+Decision - portfolio scope:
+- Confirmed: Tomorrow's Production and Waste Pattern Review both stay in the current portfolio scope alongside Next Order List. All three are fully built, tested, and verified live; the only real gap for Production/Waste is that comparable-day sales evidence is clearly-labeled SIMULATED, not real POS history yet - that's a data gap to close later, not a reason to hide working, tested code now.
+
+Reason:
+- Same discipline as every other decision in this file: don't let code silently encode an assumption that was never actually confirmed, and don't let an AI assistant unilaterally decide something that's Matthew's call (portfolio scope) or a real-world operational fact only he knows (how counting actually happens at close).
+
+Status: both resolved; P2 (docs accuracy, Mac launcher, Node version pin, accessibility) in progress.

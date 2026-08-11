@@ -453,6 +453,7 @@ td { text-align: left; padding: 0.9rem 0.5rem; border-bottom: 1px solid var(--li
 tr:hover td { background: var(--line-soft); }
 tr.selected td { background: var(--amber-bg); }
 tr.clickable-row { cursor: pointer; }
+tr.clickable-row:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 
 .action-group { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .action-group button.secondary { padding: 0.4rem 0.7rem; font-size: 0.82rem; }
