@@ -408,6 +408,30 @@ button.secondary {
 .badge.muted { background: var(--line-soft); color: var(--ink-soft); }
 
 .caveat { font-size: 0.85rem; color: var(--gold); margin-top: 0.5rem; }
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--brick-bg);
+  color: var(--brick);
+  border: 1px solid var(--brick);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.error-dismiss {
+  background: none;
+  border: none;
+  color: var(--brick);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
 .reason { font-size: 0.85rem; color: var(--ink-soft); margin-top: 0.35rem; }
 .cost-note { font-size: 0.8rem; color: var(--ink-soft); font-style: italic; }
 

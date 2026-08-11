@@ -271,39 +271,88 @@ const state = {
   wasteSelectedItemKey: TOMORROWS_PRODUCTION_ITEMS[0].itemKey,
 
   sidebarCollapsed: localStorage.getItem("sidebarCollapsed") === "true",
+  errorMessage: null,
 
   // Act-now is always fully visible per plans/URGENCY-FIRST-MANAGER-DASHBOARD.md
   // (authorized 2026-07-27); only the lower-urgency groups collapse.
   expandedGroups: { "review-today": true, "plan-next": false },
 };
 
+// P1: every previous fetch() call here trusted the response unconditionally
+// - a 400 from the server (e.g. a rejected finalize) was silently treated
+// as if it had succeeded, since nothing ever checked response.ok. This
+// wrapper is the one place that does, so every caller below gets it for
+// free rather than needing to remember to check.
+async function apiFetch(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      if (body.error) message = body.error;
+      else if (Array.isArray(body.errors)) message = body.errors.join("; ");
+    } catch {
+      // Response body wasn't JSON - keep the generic status-based message.
+    }
+    throw new Error(message);
+  }
+  return response;
+}
+
 async function loadActiveDraft() {
-  state.draft = await fetch("/draft").then((r) => r.json());
+  try {
+    state.draft = await apiFetch("/draft").then((r) => r.json());
+  } catch (error) {
+    state.errorMessage = error.message;
+  }
 }
 
 async function loadHistory() {
-  state.history = await fetch("/history").then((r) => r.json());
+  try {
+    state.history = await apiFetch("/history").then((r) => r.json());
+  } catch (error) {
+    state.errorMessage = error.message;
+  }
 }
 
+// Returns true/false so callers that chain further actions (like
+// confirmFinalize's save-then-finalize) can stop if the save failed,
+// instead of finalizing against data that was never actually persisted.
 async function saveDraft(patch) {
   state.saveState = "saving";
   render();
   const nextData = { ...state.draft.data, ...patch };
-  state.draft = await fetch("/draft", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(nextData),
-  }).then((r) => r.json());
-  state.saveState = "saved";
-  render();
+  try {
+    state.draft = await apiFetch("/draft", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(nextData),
+    }).then((r) => r.json());
+    state.saveState = "saved";
+    state.errorMessage = null;
+    render();
+    return true;
+  } catch (error) {
+    state.saveState = "idle";
+    state.errorMessage = error.message;
+    render();
+    return false;
+  }
 }
 
 async function finalizeDraft(managerInitials) {
-  await fetch(`/draft/${state.draft.id}/finalize`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ managerInitials }),
-  });
+  try {
+    await apiFetch(`/draft/${state.draft.id}/finalize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ managerInitials }),
+    });
+  } catch (error) {
+    state.errorMessage = error.message;
+    render();
+    return;
+  }
+  state.errorMessage = null;
   state.finalizeDialogOpen = false;
   await loadActiveDraft();
   state.workspaceTab = "history";
@@ -312,11 +361,19 @@ async function finalizeDraft(managerInitials) {
 }
 
 async function loadActiveProductionDraft() {
-  state.productionDraft = await fetch("/production/draft").then((r) => r.json());
+  try {
+    state.productionDraft = await apiFetch("/production/draft").then((r) => r.json());
+  } catch (error) {
+    state.errorMessage = error.message;
+  }
 }
 
 async function loadProductionHistory() {
-  state.productionHistory = await fetch("/production/history").then((r) => r.json());
+  try {
+    state.productionHistory = await apiFetch("/production/history").then((r) => r.json());
+  } catch (error) {
+    state.errorMessage = error.message;
+  }
 }
 
 async function saveProductionDraft(patch) {
@@ -328,13 +385,22 @@ async function saveProductionDraft(patch) {
     decisions: { ...state.productionDraft.data.decisions, ...(patch.decisions ?? {}) },
     reserveEntries: { ...state.productionDraft.data.reserveEntries, ...(patch.reserveEntries ?? {}) },
   };
-  state.productionDraft = await fetch("/production/draft", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(nextData),
-  }).then((r) => r.json());
-  state.productionSaveState = "saved";
-  render();
+  try {
+    state.productionDraft = await apiFetch("/production/draft", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(nextData),
+    }).then((r) => r.json());
+    state.productionSaveState = "saved";
+    state.errorMessage = null;
+    return true;
+  } catch (error) {
+    state.productionSaveState = "idle";
+    state.errorMessage = error.message;
+    return false;
+  } finally {
+    render();
+  }
 }
 
 // Removing a decision means deleting a key, which the merge-only
@@ -346,21 +412,34 @@ async function clearProductionDecision(itemKey) {
   const nextDecisions = { ...state.productionDraft.data.decisions };
   delete nextDecisions[itemKey];
   const nextData = { ...state.productionDraft.data, decisions: nextDecisions };
-  state.productionDraft = await fetch("/production/draft", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(nextData),
-  }).then((r) => r.json());
-  state.productionSaveState = "saved";
+  try {
+    state.productionDraft = await apiFetch("/production/draft", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(nextData),
+    }).then((r) => r.json());
+    state.productionSaveState = "saved";
+    state.errorMessage = null;
+  } catch (error) {
+    state.productionSaveState = "idle";
+    state.errorMessage = error.message;
+  }
   render();
 }
 
 async function finalizeProductionDraft(managerInitials) {
-  await fetch(`/production/draft/${state.productionDraft.id}/finalize`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ managerInitials }),
-  });
+  try {
+    await apiFetch(`/production/draft/${state.productionDraft.id}/finalize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ managerInitials }),
+    });
+  } catch (error) {
+    state.errorMessage = error.message;
+    render();
+    return;
+  }
+  state.errorMessage = null;
   state.productionFinalizeDialogOpen = false;
   await loadActiveProductionDraft();
   state.productionWorkspaceTab = "history";
@@ -1268,15 +1347,32 @@ function renderWasteWorkspace() {
   `;
 }
 
+// Every mutating request (saveDraft, finalizeDraft, and their Production
+// equivalents) now checks response.ok and routes failures here instead of
+// silently proceeding as if they'd succeeded - a real 400 from the P0
+// validation work was initially invisible in the UI for exactly this
+// reason during testing.
+function renderErrorBanner() {
+  if (!state.errorMessage) return "";
+  return `
+    <div class="error-banner">
+      <span>${escapeHtml(state.errorMessage)}</span>
+      <button class="error-dismiss" id="dismissError" aria-label="Dismiss">&times;</button>
+    </div>
+  `;
+}
+
 function render() {
   document.querySelector("#shell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
   document.querySelector("#sidebar-toggle").title = state.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
   renderSidenav();
   const app = document.querySelector("#app");
-  if (state.view === "overview") app.innerHTML = renderOverview();
-  else if (state.view === "workspace") app.innerHTML = renderWorkspace();
-  else if (state.view === "production") app.innerHTML = renderProductionWorkspace();
-  else if (state.view === "waste") app.innerHTML = renderWasteWorkspace();
+  let content;
+  if (state.view === "overview") content = renderOverview();
+  else if (state.view === "workspace") content = renderWorkspace();
+  else if (state.view === "production") content = renderProductionWorkspace();
+  else if (state.view === "waste") content = renderWasteWorkspace();
+  app.innerHTML = renderErrorBanner() + content;
 }
 
 function bindEvents() {
@@ -1440,8 +1536,14 @@ function bindEvents() {
       // part of the permanent finalized record, not a one-time gate the
       // server immediately forgets.
       const row = computeRow(state.draft.data);
-      await saveDraft({ managerBoxes: row.managerBoxes, supplierRuleAcknowledged: true });
+      const saved = await saveDraft({ managerBoxes: row.managerBoxes, supplierRuleAcknowledged: true });
+      if (!saved) return;
       await finalizeDraft(input.value.trim());
+      return;
+    }
+    if (event.target.id === "dismissError") {
+      state.errorMessage = null;
+      render();
       return;
     }
   });

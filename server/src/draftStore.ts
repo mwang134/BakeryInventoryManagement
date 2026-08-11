@@ -51,19 +51,80 @@ function toRecord(row: {
   };
 }
 
+// Versioned migrations, keyed off SQLite's built-in PRAGMA user_version.
+// Each migration must be safe to re-run against a database that's already
+// at or past its version (IF NOT EXISTS everywhere) - runMigrations always
+// walks the full list on every startup rather than trusting a stored
+// "already ran" flag, so a database that's behind catches up regardless of
+// how long it's been since it was last opened.
+const MIGRATIONS: Array<{ version: number; up: (db: DatabaseSync) => void }> = [
+  {
+    version: 1,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS drafts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          status TEXT NOT NULL CHECK (status IN ('draft', 'final')),
+          data TEXT NOT NULL,
+          manager_initials TEXT,
+          finalized_at TEXT,
+          updated_at TEXT
+        )
+      `);
+      // A partial unique index on a column that's constant among the rows
+      // it covers (every matching row has status = 'draft') enforces "at
+      // most one row satisfies this predicate" - the standard SQLite
+      // pattern for a singleton row, here used to make "exactly one active
+      // draft" a database-level guarantee instead of just an application
+      // convention that a bug (or a second process touching the same file)
+      // could silently violate.
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS one_active_draft_idx
+        ON drafts(status) WHERE status = 'draft'
+      `);
+    },
+  },
+];
+
+export const CURRENT_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+export function runMigrations(db: DatabaseSync): void {
+  const { user_version: currentVersion } = db.prepare("PRAGMA user_version").get() as {
+    user_version: number;
+  };
+  for (const migration of MIGRATIONS) {
+    if (migration.version > currentVersion) {
+      migration.up(db);
+      db.exec(`PRAGMA user_version = ${migration.version}`);
+    }
+  }
+}
+
+function withTransaction<T>(db: DatabaseSync, fn: () => T): T {
+  db.exec("BEGIN");
+  try {
+    const result = fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function createDraftStore(location: string): DraftStore {
   const db = new DatabaseSync(location);
+  runMigrations(db);
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS drafts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      status TEXT NOT NULL CHECK (status IN ('draft', 'final')),
-      data TEXT NOT NULL,
-      manager_initials TEXT,
-      finalized_at TEXT,
-      updated_at TEXT
-    )
-  `);
+  function insertNewActiveDraft(): DraftRecord {
+    const inserted = db
+      .prepare("INSERT INTO drafts (status, data) VALUES ('draft', '{}')")
+      .run();
+    const created = db
+      .prepare("SELECT * FROM drafts WHERE id = ?")
+      .get(inserted.lastInsertRowid) as any;
+    return toRecord(created);
+  }
 
   function getActiveDraft(): DraftRecord {
     const existing = db
@@ -74,13 +135,20 @@ export function createDraftStore(location: string): DraftStore {
       return toRecord(existing);
     }
 
-    const inserted = db
-      .prepare("INSERT INTO drafts (status, data) VALUES ('draft', '{}')")
-      .run();
-    const created = db
-      .prepare("SELECT * FROM drafts WHERE id = ?")
-      .get(inserted.lastInsertRowid) as any;
-    return toRecord(created);
+    try {
+      return insertNewActiveDraft();
+    } catch (error) {
+      // Lost a race to another process/connection touching the same file:
+      // the one_active_draft_idx constraint rejected our insert because a
+      // draft now exists. Whoever won, re-select rather than surfacing
+      // this as a real error - the invariant this protects ("exactly one
+      // active draft") still holds either way.
+      const winner = db.prepare("SELECT * FROM drafts WHERE status = 'draft' LIMIT 1").get() as any;
+      if (winner) {
+        return toRecord(winner);
+      }
+      throw error;
+    }
   }
 
   function getDraft(id: number): DraftRecord | undefined {
@@ -122,16 +190,22 @@ export function createDraftStore(location: string): DraftStore {
       throw new Error(`Draft ${id} is already finalized`);
     }
 
-    db.prepare(
-      "UPDATE drafts SET status = 'final', manager_initials = ?, finalized_at = ? WHERE id = ?",
-    ).run(options.managerInitials, options.finalizedAt, id);
+    // Both writes - finalizing this row, and leaving a fresh active draft
+    // behind - happen as one transaction. Without this, a crash between
+    // the two statements could leave a finalized record with no active
+    // draft at all (the app would self-heal on the next read, since
+    // getActiveDraft() creates one lazily, but there'd be a real window
+    // where the invariant "exactly one active draft always exists" is
+    // false on disk, not just in application logic).
+    return withTransaction(db, () => {
+      db.prepare(
+        "UPDATE drafts SET status = 'final', manager_initials = ?, finalized_at = ? WHERE id = ?",
+      ).run(options.managerInitials, options.finalizedAt, id);
 
-    // Finalizing always leaves a fresh empty active draft behind, so
-    // reopening/continuing work creates a new draft rather than ever
-    // mutating the finalized History record.
-    getActiveDraft();
+      insertNewActiveDraft();
 
-    return toRecord(db.prepare("SELECT * FROM drafts WHERE id = ?").get(id) as any);
+      return toRecord(db.prepare("SELECT * FROM drafts WHERE id = ?").get(id) as any);
+    });
   }
 
   function getHistory(): DraftRecord[] {

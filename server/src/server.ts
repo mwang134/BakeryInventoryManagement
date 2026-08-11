@@ -130,8 +130,31 @@ export function createApp(dbLocation: string, productionDbLocation?: string) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = process.env.PORT ? Number(process.env.PORT) : 4000;
-  const app = createApp("./next-order-list.db", "./tomorrows-production.db");
-  app.listen(port, "127.0.0.1", () => {
-    console.log(`Next Order List server listening on http://127.0.0.1:${port}`);
+  // Overridable so process-lifecycle tests (and any future deployment)
+  // can point at an isolated file instead of the real dev database on
+  // disk, without changing anything about normal `npm run dev` usage.
+  const dbLocation = process.env.NOL_DB_PATH ?? "./next-order-list.db";
+  const productionDbLocation = process.env.PRODUCTION_DB_PATH ?? "./tomorrows-production.db";
+  const app = createApp(dbLocation, productionDbLocation);
+  const server = app.listen(port, "127.0.0.1", () => {
+    // Logs the actual bound port, not the requested one - PORT=0 asks the
+    // OS to assign any free port, and `port` above would otherwise still
+    // read 0 here, which is what a process-lifecycle test needs to parse
+    // out to know where to connect.
+    const address = server.address();
+    const actualPort = typeof address === "object" && address ? address.port : port;
+    console.log(`Next Order List server listening on http://127.0.0.1:${actualPort}`);
   });
+
+  // A clean shutdown on SIGTERM/SIGINT closes the HTTP server (stops
+  // accepting new connections, finishes in-flight ones) rather than the
+  // process just dying mid-request - relevant since node:sqlite's
+  // DatabaseSync writes are synchronous, so there's no pending-write
+  // flush to worry about, but an abrupt kill of an actively-serving HTTP
+  // server can still drop a response the client was waiting on.
+  const shutdown = () => {
+    server.close(() => process.exit(0));
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
