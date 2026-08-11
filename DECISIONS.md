@@ -259,3 +259,16 @@ Reason:
 - Mirrors the same convergence discipline as Next Order List and Tomorrow's Production: reuse real/simulated data where it already exists, freeze one clear threshold before writing code, and keep unknowns (supplier cost) visibly unresolved rather than invented.
 
 Status: active convergence contract for Waste Pattern Review. Implementation next.
+
+## 2026-08-11 — Implement Next Order List's plain-language days-of-supply (Feature 2)
+
+Decision:
+- `calculateDaysOfSupply` walks forward one calendar day at a time from the count date, deducting each day's real weekday-dependent dough usage rate (mon-thu: 84 pieces/day, fri-sun: 156 pieces/day, both derived from `CROISSANT_DOUGH.pastriesByDayType` rather than hardcoded a second time) rather than a flattened daily average - a flattened average would misstate the run-out date whenever the remaining runway crosses from one rate to the other.
+- Consumption starts the day *after* the count date, consistent with the existing "count happens after closing" rule already frozen for the pre-/post-arrival formulas.
+- This is the on-hand count's own runway assuming no further order arrives - a distinct number from the plan-stock-through projection used elsewhere in Next Order List, and it's available as soon as a count exists (it does not require shipment/plan-through dates to be entered yet).
+- Surfaced as plain language, e.g. "~6 days of supply (through Aug 16)", on the homepage KPI card's meta line and the workspace List row - not as a new standalone view.
+
+Reason:
+- This was the "Feature 2" scoped during Next Order List's original Feature 1/Feature 2 planning discussion, deferred until after Feature 1 (the "what changed" trend comparison) shipped.
+
+Status: implemented and tested (real croissant dough count numbers as the primary test case). Chart panels across all three KPIs were also redesigned this session with a real Y-axis, gridlines, and KPI-tied reference lines, replacing the earlier plain bar rows.
