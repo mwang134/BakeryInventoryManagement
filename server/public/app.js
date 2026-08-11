@@ -10,6 +10,7 @@ import {
   classifyDayType,
   calculateCapacityStatus,
   estimateCapacityFromCurrentCount,
+  calculateDaysOfSupply,
 } from "/lib/next-order-list.js";
 import { calculateWasteFlag } from "/lib/waste-review.js";
 // Reused as-is from the old prototype: a generic, non-sample-specific
@@ -78,6 +79,18 @@ function demandForDate(dateIso) {
   });
 }
 
+// Feature 2: the same per-day-type pieces total demandForDate() computes,
+// but as a flat { "mon-thu": n, "fri-sun": n } lookup for calculateDaysOfSupply's
+// day-by-day walk, rather than one date-by-date aggregation.
+function dailyUsageRates() {
+  const totalFor = (dayType) =>
+    CROISSANT_DOUGH.pastriesByDayType[dayType].reduce(
+      (total, row) => total + row.plannedQuantity * row.doughPiecesPerPastry,
+      0,
+    );
+  return { "mon-thu": totalFor("mon-thu"), "fri-sun": totalFor("fri-sun") };
+}
+
 // Turns the raw draft.data into everything the UI needs to render: status
 // badges, the suggestion, and what (if anything) is blocking finalization.
 function computeRow(data) {
@@ -97,12 +110,21 @@ function computeRow(data) {
     onHandPieces,
     piecesPerBox: CROISSANT_DOUGH.piecesPerBox,
   });
+  // Feature 2: plain-language runway if no further order arrived - only
+  // needs the count itself, so it's available even before shipment/plan
+  // dates are entered.
+  const daysOfSupply = calculateDaysOfSupply({
+    onHandPieces,
+    countDate: data.countDate,
+    dailyUsageByDayType: dailyUsageRates(),
+  });
 
   if (!data.shipmentDate || !data.planStockThroughDate) {
     return {
       status: "dates-needed",
       onHandPieces,
       freshness,
+      daysOfSupply,
       blockers: ["Shipment-available date and plan-stock-through date needed"],
     };
   }
@@ -112,7 +134,7 @@ function computeRow(data) {
     dailyResults: preArrivalDates.map(demandForDate),
   });
   if (preArrivalTotal.status !== "ok") {
-    return { status: preArrivalTotal.status, onHandPieces, freshness, blockers: [preArrivalTotal.status] };
+    return { status: preArrivalTotal.status, onHandPieces, freshness, daysOfSupply, blockers: [preArrivalTotal.status] };
   }
 
   const preArrival = calculatePreArrivalStatus({
@@ -125,7 +147,14 @@ function computeRow(data) {
     dailyResults: postArrivalDates.map(demandForDate),
   });
   if (postArrivalTotal.status !== "ok") {
-    return { status: postArrivalTotal.status, onHandPieces, freshness, preArrival, blockers: [postArrivalTotal.status] };
+    return {
+      status: postArrivalTotal.status,
+      onHandPieces,
+      freshness,
+      daysOfSupply,
+      preArrival,
+      blockers: [postArrivalTotal.status],
+    };
   }
 
   const suggestion = calculatePostArrivalSuggestion({
@@ -165,6 +194,7 @@ function computeRow(data) {
     status: "ready",
     onHandPieces,
     freshness,
+    daysOfSupply,
     preArrival,
     preArrivalUsagePieces: preArrivalTotal.totalDoughPieces,
     postArrivalUsagePieces: postArrivalTotal.totalDoughPieces,
@@ -353,6 +383,22 @@ function formatTime(iso) {
   return new Date(iso).toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" });
 }
 
+// Feature 2, in plain language: "~6 days of supply (through Aug 16)" - the
+// current on-hand count's own runway if no further order arrived, not the
+// plan-stock-through outcome after this order. calculateDaysOfSupply
+// already did the real day-by-day work; this only formats it.
+function formatDaysOfSupply(daysOfSupply) {
+  if (!daysOfSupply) return null;
+  if (daysOfSupply.status === "already out") return "Already out of stock";
+  if (daysOfSupply.status !== "ok") return null;
+  const throughLabel = new Date(`${daysOfSupply.throughDate}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return `~${daysOfSupply.daysOfSupply} day${daysOfSupply.daysOfSupply === 1 ? "" : "s"} of supply (through ${throughLabel})`;
+}
+
 // ---------- Sidebar ----------
 
 function renderSidenav() {
@@ -468,7 +514,7 @@ function buildHomeActions() {
       title: "Next Order List",
       detail: `${statusLabel} · Croissant dough`,
       progressPercent: (reviewedCount / totalCount) * 100,
-      meta: `${reviewedCount} of ${totalCount} products reviewed${lastEdited ? ` · Last edited ${lastEdited}` : ""}`,
+      meta: `${reviewedCount} of ${totalCount} products reviewed${lastEdited ? ` · Last edited ${lastEdited}` : ""}${formatDaysOfSupply(row.daysOfSupply) ? ` · ${formatDaysOfSupply(row.daysOfSupply)}` : ""}`,
       trend: boxesTrend,
     },
     {
@@ -630,7 +676,10 @@ function renderListRow(row) {
         <span class="why-link" id="toggle-why">${state.showWhy ? "Hide evidence" : "Why? ›"}</span>
         ${state.showWhy ? `<div class="why-detail">${whyText}</div>` : ""}
       </td>
-      <td>${row.onHandPieces} pieces</td>
+      <td>
+        ${row.onHandPieces} pieces
+        ${formatDaysOfSupply(row.daysOfSupply) ? `<div class="reason">${formatDaysOfSupply(row.daysOfSupply)}</div>` : ""}
+      </td>
       <td>${statusBadge(row)}</td>
       <td>
         ${s.suggestedBoxes} box${s.suggestedBoxes === 1 ? "" : "es"}

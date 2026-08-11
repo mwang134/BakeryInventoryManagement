@@ -225,6 +225,42 @@ export function calculateCapacityStatus({ currentUnits, incomingUnits, practical
   };
 }
 
+// Plain-language "days of supply": walks forward one calendar day at a time
+// from the count date, deducting that specific day's actual weekday-dependent
+// usage rate (mon-thu vs fri-sun) rather than a flattened daily average,
+// which would misstate the run-out date whenever the remaining stretch
+// crosses from one rate to the other. Consumption starts the day after the
+// count date, matching the "count happens after closing" rule used
+// elsewhere in this file - the count date's own usage already happened
+// before the count was taken.
+export function calculateDaysOfSupply({ onHandPieces, countDate, dailyUsageByDayType }) {
+  if (onHandPieces <= 0) {
+    return { status: "already out", daysOfSupply: 0, throughDate: null };
+  }
+
+  let remaining = onHandPieces;
+  let cursor = countDate;
+  let daysOfSupply = 0;
+  let throughDate = null;
+
+  while (true) {
+    const next = new Date(`${cursor}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    cursor = next.toISOString().slice(0, 10);
+
+    const rate = dailyUsageByDayType[classifyDayType(cursor)];
+    if (remaining < rate) {
+      break;
+    }
+
+    remaining -= rate;
+    daysOfSupply += 1;
+    throughDate = cursor;
+  }
+
+  return { status: "ok", daysOfSupply, throughDate };
+}
+
 // No real freezer-zone capacity has ever been provided, so this derives a
 // placeholder estimate from one observed physical count instead of showing
 // nothing. A partial piece still occupies a full box's worth of space, so it
