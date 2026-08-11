@@ -19,6 +19,7 @@ export interface DraftRecord {
 
 export interface DraftStore {
   getActiveDraft(): DraftRecord;
+  getDraft(id: number): DraftRecord | undefined;
   saveActiveDraft(data: Record<string, unknown>): DraftRecord;
   saveDraft(id: number, data: Record<string, unknown>): DraftRecord;
   finalizeDraft(
@@ -82,6 +83,11 @@ export function createDraftStore(location: string): DraftStore {
     return toRecord(created);
   }
 
+  function getDraft(id: number): DraftRecord | undefined {
+    const row = db.prepare("SELECT * FROM drafts WHERE id = ?").get(id) as any;
+    return row ? toRecord(row) : undefined;
+  }
+
   function saveDraft(id: number, data: Record<string, unknown>): DraftRecord {
     const row = db.prepare("SELECT * FROM drafts WHERE id = ?").get(id) as any;
     if (!row) {
@@ -135,5 +141,5 @@ export function createDraftStore(location: string): DraftStore {
     return rows.map(toRecord);
   }
 
-  return { getActiveDraft, saveActiveDraft, saveDraft, finalizeDraft, getHistory };
+  return { getActiveDraft, getDraft, saveActiveDraft, saveDraft, finalizeDraft, getHistory };
 }

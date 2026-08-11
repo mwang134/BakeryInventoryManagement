@@ -26,6 +26,7 @@ import {
   shouldAppearInReserveCheck,
 } from "/lib/tomorrows-production.js";
 import { TOMORROWS_PRODUCTION_ITEMS } from "/productionData.js";
+import { escapeHtml } from "/lib/escape-html.js";
 
 // The one currently-validated redacted SKU contract
 // (data/redacted-sku-contracts/croissant-dough.md). Box size is explicitly
@@ -840,7 +841,7 @@ function renderHistory() {
         <div class="card history-card">
           <div class="history-head">
             <b>Finalized ${new Date(record.finalizedAt).toLocaleString()}</b>
-            <span class="badge muted">by ${record.managerInitials}</span>
+            <span class="badge muted">by ${escapeHtml(record.managerInitials)}</span>
           </div>
           <div class="reason">Supplier order sent: ${record.supplierOrderSent}</div>
           <pre>${JSON.stringify(record.data, null, 2)}</pre>
@@ -879,6 +880,12 @@ function renderFinalizeBar(row) {
         <div class="finalize-inline">
           <label style="color:var(--cream)">Manager initials
             <input type="text" id="managerInitials" placeholder="e.g. MW" autofocus />
+          </label>
+        </div>
+        <div class="finalize-inline">
+          <label style="color:var(--cream); display:flex; align-items:center; gap:0.5rem; font-size:0.82rem; max-width:32rem">
+            <input type="checkbox" id="supplierRuleAck" />
+            I acknowledge box size (192 pieces/box) and supplier minimum are unverified estimates, not confirmed supplier data.
           </label>
         </div>
         <div class="finalize-inline">
@@ -1117,7 +1124,7 @@ function renderProductionHistory() {
         <div class="card history-card">
           <div class="history-head">
             <b>Finalized ${new Date(record.finalizedAt).toLocaleString()}</b>
-            <span class="badge muted">by ${record.managerInitials}</span>
+            <span class="badge muted">by ${escapeHtml(record.managerInitials)}</span>
           </div>
           <table>
             <thead><tr><th>Product</th><th>Baker sheet</th></tr></thead>
@@ -1419,6 +1426,21 @@ function bindEvents() {
         input.focus();
         return;
       }
+      const ackBox = document.querySelector("#supplierRuleAck");
+      if (!ackBox.checked) {
+        ackBox.focus();
+        return;
+      }
+      // managerBoxes is otherwise only ever a display-time fallback to the
+      // suggestion (computeRow line ~168) - if the manager never touched
+      // the input, it was never actually persisted. Finalizing must commit
+      // to a concrete stored number, not leave it to be re-derived later
+      // from whatever the suggestion logic happens to compute by then.
+      // Stored alongside supplierRuleAcknowledged so the acknowledgment is
+      // part of the permanent finalized record, not a one-time gate the
+      // server immediately forgets.
+      const row = computeRow(state.draft.data);
+      await saveDraft({ managerBoxes: row.managerBoxes, supplierRuleAcknowledged: true });
       await finalizeDraft(input.value.trim());
       return;
     }
